@@ -34,7 +34,7 @@ class Interpolation:
         self._phase = 0
 
     def set(self, value: int | float):
-        if 0 < value < 1:
+        if 0 <= value <= 1:
             self._phase = value
         else:
             raise ValueError("parameter 'value' must be between 0 and 1.")
@@ -58,23 +58,67 @@ class Linear(Interpolation):
 
 class Quad(Interpolation):
     # 二次函数型，先慢后快
+    def __init__(self, step, initial_phase=0, direction=1):
+        super().__init__(step, initial_phase, direction)
+        self._current_step = round((initial_phase ** 0.5) * step)
+
+    def clear(self):
+        super().clear()
+        self._current_step = 0
+
+    def set(self, value):
+        super().set(value)
+        self._current_step = round((value ** 0.5) * self.step)
+
     def update(self):
-        raise NotImplementedError
-        # TODO: implement the function
+        self._current_step = trim(self._current_step + self.direction, 0, self.step)
+        t = self._current_step / self.step
+        self._phase = t ** 2
+        return self._phase
 
 
 class ReversedQuad(Interpolation):
     # Quad 的图像中心对称， 先快后慢
-    def update(self):
-        raise NotImplementedError
-        # TODO: implement the function
+    def __init__(self, step, initial_phase=0, direction=1):
+        super().__init__(step, initial_phase, direction)
+        self._current_step = round((1 - (1 - initial_phase) ** 0.5) * step)
 
+    def clear(self):
+        super().clear()
+        self._current_step = 0
+
+    def set(self, value):
+        super().set(value)
+        self._current_step = round((1 - (1 - value) ** 0.5) * self.step)
+
+    def update(self):
+        self._current_step = trim(self._current_step + self.direction, 0, self.step)
+        t = self._current_step / self.step
+        self._phase = 1 - (1 - t) ** 2
+        return self._phase
 
 class DoubleQuad(Interpolation):
-    # 双二次函数，平滑变换（本来想用sin，但是开销有点大）
+    #双二次平滑：用Smoothstep = t²(3 - 2t)近似sin
+
+    def __init__(self, step, initial_phase=0, direction=1):
+        super().__init__(step, initial_phase, direction)
+        # 三次方程反推不精确，线性近似
+        self._current_step = round(initial_phase * step)
+
+    def clear(self):
+        super().clear()
+        self._current_step = 0
+
+    def set(self, value):
+        super().set(value)
+        self._current_step = round(value * self.step)
+
     def update(self):
-        raise NotImplementedError
-        # TODO: implement the function
+        self._current_step = trim(self._current_step + self.direction, 0, self.step)
+        t = self._current_step / self.step
+        self._phase = t * t * (3 - 2 * t)
+        return self._phase
+
 
 
 class Effect:
