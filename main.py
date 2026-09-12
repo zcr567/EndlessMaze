@@ -1,27 +1,24 @@
 import os
 import random
-from enum import IntEnum
+from enum import IntEnum, IntFlag
 
 import pygame
 import pygame as pg
 from pygame.draw import line
 
+from Resources import *
+from effects import *
 from maze import Maze
-from vectors import Vector, Cell
+from vectors import Cell, DIR_VECS
+# noinspection PyPep8Naming
+from vectors import Vector as V
 
 # executable generating command
 # pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
 
-window_pos = (0, 30)
-os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
 
 pg.init()
-clock = pg.time.Clock()
 INIT_SCREEN_SIZE = (600, 800)
-
-screen = pg.display.set_mode(INIT_SCREEN_SIZE, pygame.RESIZABLE)
-pg.display.set_caption('Maze')
-
 window_size = (0, 0)
 
 
@@ -36,52 +33,146 @@ class GameMode(IntEnum):
     DOUBLE = 1
 
 
+class DispState(IntFlag):
+    IDLE = 1
+    MOVING = 2
+    ROTATING = 4
+    DYING = 8
+
+
 game_mode = GameMode.SINGLE
 
 
 class Player:
-    """Base class for players, implemented basic display and move functions."""
+    """Player class."""
 
-    def __new__(cls, *args, **kwargs):
-        raise NotImplementedError
-
-    def __init__(self, game, x0=0, y0=0, heading=Cell.GO_UP, player_type: int = 0):
-        self.game = game
+    def __init__(self, game, pos0=V(0, 0), heading=Cell.GO_UP, player_type=PlayerType.SINGLE):
+        # basic properties
+        self.game: MazeGame = game
+        self.maze: Maze = self.game.maze
+        self.surface = self.game.screen
         self.player_type = player_type
-        self.x = x0
-        self.y = y0
+        self.pos = pos0
         self.heading = heading
-        self.player_type = player_type
-        pass
 
-    def move(self):
-        self.game.maze.get_p()
+        # game logic
+        self.eaten = 0
+        self.eat = 0
+
+        # display
+        if self.player_type == PlayerType.PREDATOR:
+            self.anim_dict: dict[Cell:Animation] = predator_anim_dict
+        else:
+            self.anim_dict: dict[Cell:Animation] = prey_anim_dict
+        self.cur_anim: Animation = self.anim_dict[self.heading]
+        self.cur_anim.set_position(self.pos_to_surf())
+        self.disp_state = DispState.IDLE
+
+        self.movement_intp = ReversedQuad(step=15)
+        self.pos_next = self.pos
+        self.movement_vec = V(0, 0)
+
+    def pos_to_surf(self, pos=None):
+        """return the current position in maze_surf coordinates"""
+        if pos is None:
+            return V(int(self.game.region[0] + self.game.cell_width * (self.pos[0] + 0.5) + 1),
+                     int(self.game.region[1] + self.game.cell_width * (self.pos[1] + 0.5)) + 1)
+        else:
+            return V(int(self.game.region[0] + self.game.cell_width * (pos[0] + 0.5) + 1),
+                     int(self.game.region[1] + self.game.cell_width * (pos[1] + 0.5)) + 1)
+
+    def _is_available(self, vec):
+        """return True if there is no obstacle between 'self.pos_next' and 'self.pos_next + vec'"""
+        return (self.maze.is_valid_coord(self.pos_next + vec)
+                and self.game.inst[2 * self.pos_next[1] + vec[1] + 1][2 * self.pos_next[0] + vec[0] + 1] == 2)
+
+    def move(self, direction: Cell):
+        # calculate the next position
+        if self.disp_state & DispState.MOVING:
+            return
+        vec = DIR_VECS[direction]
+        if direction != self.heading:
+            self.heading = direction
+            self.disp_state |= DispState.ROTATING
+        all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
+        if self._is_available(vec):
+            self.pos_next += vec
+        else:
+            return
+        while (self._is_available(vec)
+               and not self._is_available(all_headings[(all_headings.index(vec) + 1) % 4])
+               and not self._is_available(all_headings[(all_headings.index(vec) + 3) % 4])
+               and not self.pos == self.maze.end):
+            # the condition: there is one available cell in the front, and there is no branch at the current cell
+            # and the current cell is not the end of the maze
+            self.pos_next += vec
+
+        # initialize movement animation
+        self.movement_intp = ReversedQuad(step=5 * abs(sum(self.pos_next - self.pos)))
+        self.movement_vec = self.pos_to_surf(self.pos_next) - self.pos_to_surf(self.pos)
+        self.disp_state |= DispState.MOVING
 
     def draw(self):
-        if game_mode == GameMode.SINGLE:
-            pass
-        (int(self.game.region[0] + self.game.cell_width * (self.x + 0.5) + 1),
-         int(self.game.region[1] + self.game.cell_width * (self.y + 0.5)) + 1)
+        if self.disp_state & DispState.MOVING:
+            if self.movement_intp.get() != 1:
+                self.cur_anim.set_position(self.pos_to_surf() + self.movement_vec * self.movement_intp.get())
+                self.movement_intp.update()
+            else:
+                self.disp_state ^= DispState.MOVING
+                self.pos = self.pos_next
+                self.movement_intp.set(0)
+                self.movement_vec = V(0, 0)
+        if self.disp_state & DispState.ROTATING:
+            fid = self.cur_anim.get_frame_id()
+            pos = self.cur_anim.get_position()
+            self.cur_anim = self.anim_dict[self.heading]
+            self.cur_anim.set_frame_id(fid)
+            self.cur_anim.set_position(pos)
+            self.disp_state ^= DispState.ROTATING
+        if self.disp_state == DispState.IDLE:  # must be "==" !
+            self.cur_anim.set_position(self.pos_to_surf())
+
+        self.cur_anim.step()
+        self.cur_anim.draw(self.surface, size=[self.game.cell_width * 1.2, self.game.cell_width * 1.2])
 
 
 class MazeGame:
     MAZE_EDGE_COLOR = (255, 255, 255)
     BG_COLORS = ((204, 128, 204), (108, 150, 200), (200, 175, 64), (100, 204, 100))
+    _instance = None
+    MAX_MAZE_WIDTH = 10
+    MAX_MAZE_HEIGHT = 10
 
-    def __init__(self, surf: pygame.Surface):
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            return cls._instance
+        else:
+            raise RuntimeError(f'"{cls.__name__}" instance is already created')
 
+    def __init__(self, surf: pygame.Surface, gamemode=GameMode.SINGLE):
         # common
-        self.field_width = random.randint(3, 50)
-        self.field_height = random.randint(3, 50)
-        self.maze = Maze((self.field_width, self.field_height))
+        self.gamemode = gamemode
+        self.field_width = random.randint(3, self.MAX_MAZE_WIDTH)
+        self.field_height = random.randint(3, self.MAX_MAZE_HEIGHT)
+        self.maze: Maze = Maze((self.field_width, self.field_height))
+        self.inst = self.maze.draw_instructions()
 
         # display related
-        self.maze_surf = surf
+        self.maze_surf = pygame.Surface(window_size, pygame.SRCALPHA)
         self.bg_color = random.choice(self.BG_COLORS)
         self.screen = surf
-        self.region = Vector(0, 0)
+        self.region = V(0, 0)
         self.cell_width = 0
         self.maze_edge_width = 0
+        self.update_arrangement()
+
+        # game logic related
+        self.players = []
+        if gamemode == GameMode.SINGLE:
+            self.players.append(Player(self, pos0=self.maze.start))
+        elif gamemode == GameMode.DOUBLE:
+            pass
 
     def update_arrangement(self):
         """update the screen size variables, call every time the screen size changes"""
@@ -94,12 +185,12 @@ class MazeGame:
         self.region = ((window_size[0] - size[0]) / 2, (window_size[1] - size[1]) / 2)
 
     def draw_maze(self):
-        """draw the maze on self.maze_surf property."""
+        """draw the maze on "self.maze_surf" property."""
         self.maze_surf.fill((0, 0, 0, 0))
-        inst = self.maze.draw_instructions()
+        # self.inst = self.maze.draw_instructions()
         for row in range(self.field_height * 2 + 1):
             for col in range(self.field_width * 2 + 1):
-                op = inst[row][col]
+                op = self.inst[row][col]
                 if row % 2 == 0 and col % 2 == 1 and op == 0:
                     line(self.maze_surf,
                          self.MAZE_EDGE_COLOR,
@@ -137,6 +228,15 @@ class MazeGame:
                 exit()
             if event.type == pg.WINDOWSIZECHANGED:
                 self.update_arrangement()
+            if event.type == pg.KEYDOWN:
+                if event.key == pg.K_RIGHT:
+                    self.players[0].move(Cell.GO_RIGHT)
+                elif event.key == pg.K_LEFT:
+                    self.players[0].move(Cell.GO_LEFT)
+                elif event.key == pg.K_UP:
+                    self.players[0].move(Cell.GO_UP)
+                elif event.key == pg.K_DOWN:
+                    self.players[0].move(Cell.GO_DOWN)
             else:
                 pass
                 # print(event)
@@ -146,17 +246,27 @@ class MazeGame:
         self.draw_maze()
 
         screen.blit(self.maze_surf, (0, 0))
+        for p in self.players:
+            p.draw()
         pygame.display.flip()
 
 
-# set_callback_hook(mainloop_once)
-
 frame_id = 0
 if __name__ == '__main__':
+    clock = pg.time.Clock()
+
+    window_pos = (0, 30)
+    os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
+
+    screen = pg.display.set_mode(INIT_SCREEN_SIZE, pygame.RESIZABLE)
+    pg.display.set_caption('EndlessMaze')
+    pg.display.set_icon(app_logo)
+    window_size = pg.display.get_window_size()
+
     main_game = MazeGame(screen)
-    main_game.update_arrangement()
 
     while True:
         clock.tick(60)
         main_game.handle_events()
+        main_game.game_logic()
         main_game.update_display()

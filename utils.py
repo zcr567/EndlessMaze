@@ -15,4 +15,4 @@ def resource_path(relative_path):
     else:
         # development env
         base_path = abspath(".")
-    return base_path + '/' + relative_path
+    return base_path + '\\' + relative_path

@@ -7,6 +7,8 @@ import sys
 
 import pygame
 
+__all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor"]
+
 
 def trim(value, min_val=0, max_val=1):
     """Trim a value to make sure it is between min_val and max_val."""
@@ -98,8 +100,9 @@ class ReversedQuad(Interpolation):
         self._phase = 1 - (1 - t) ** 2
         return self._phase
 
+
 class DoubleQuad(Interpolation):
-    #双二次平滑：用Smoothstep = t²(3 - 2t)近似sin
+    # 双二次平滑：用Smoothstep = t²(3 - 2t)近似sin
 
     def __init__(self, step, initial_phase=0, direction=1):
         super().__init__(step, initial_phase, direction)
@@ -119,7 +122,6 @@ class DoubleQuad(Interpolation):
         t = self._current_step / self.step
         self._phase = t * t * (3 - 2 * t)
         return self._phase
-
 
 
 class Effect:

@@ -4,12 +4,15 @@ from xml.etree import ElementTree as ETree
 
 import pygame
 
+from utils import resource_path
 from vectors import Vector, vec_like, DIR_ENUMS
 
+__all__ = ["Animation", "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title"]
 
-__all__ = [
-    "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title"
-]
+resource_root = resource_path("Resources\\")
+
+if __name__ == '__main__':
+    resource_root = resource_path("\\")
 
 
 def load_atlas(img_path, atlas_path):
@@ -49,51 +52,62 @@ class Animation(pygame.sprite.Sprite):
         self._cur_frame = (self._cur_frame + num) % len(self._atlas_imgs)
         self.image = self._atlas_imgs[self._cur_frame]
 
-    def get_cur_frame(self):
+    def get_frame_id(self):
         return self._cur_frame
+
+    def set_frame_id(self, frame_id):
+        self._cur_frame = frame_id
 
     def set_position(self, pos: vec_like):
         delta = pos - self._region
         self.move(delta)
 
+    def get_position(self):
+        return self._region
+
     def move(self, vector: vec_like):
         self.rect.move_ip(vector[0], vector[1])
         self._region += vector
 
-    def draw(self, surface: pygame.Surface):
-        surface.blit(self.image, self.rect)
+    def draw(self, surface: pygame.Surface, size=None):
+        if size is not None:
+            t_surf = pygame.transform.smoothscale(self.image, size)
+            t_rect = t_surf.get_rect()
+            t_rect.center = self._region
+            surface.blit(t_surf, t_rect)
+        else:
+            surface.blit(self.image, self.rect)
 
 
 # load the player animation dictionary
-surf, seq_dict = load_atlas("Images/players/atlas.png", "Images/players/atlas.xml")
+surf, seq_dict = load_atlas(resource_root + "Images\\players\\atlas.png", resource_root + "Images\\players\\atlas.xml")
 seq_dict["predator_left"] = [pygame.transform.flip(surf, True, False) for surf in seq_dict["predator_right"]]
 seq_dict["prey_left"] = [pygame.transform.flip(surf, True, False) for surf in seq_dict["prey_right"]]
 _pred_anim_ls = [
-    Animation(seq_dict["predator_up"]),
-    Animation(seq_dict["predator_down"]),
     Animation(seq_dict["predator_left"]),
     Animation(seq_dict["predator_right"]),
+    Animation(seq_dict["predator_up"]),
+    Animation(seq_dict["predator_down"]),
 ]
 _prey_anim_ls = [
-    Animation(seq_dict["prey_up"]),
-    Animation(seq_dict["prey_down"]),
     Animation(seq_dict["prey_left"]),
     Animation(seq_dict["prey_right"]),
+    Animation(seq_dict["prey_up"]),
+    Animation(seq_dict["prey_down"]),
 ]
 predator_anim_dict = {k: v for k, v in zip(DIR_ENUMS.values(), _pred_anim_ls)}
 prey_anim_dict = {k: v for k, v in zip(DIR_ENUMS.values(), _prey_anim_ls)}
 
-
 # load the icons
-icon_root = "Images/icons/"
+icon_root = resource_root + "Images\\icons\\"
 icon_paths = list(os.walk(icon_root))[0][2]
 icons_dict = {}
 for p in icon_paths:
     icons_dict[p[1:-4]] = pygame.image.load(icon_root + p)
 
-
 # load the app logo and welcome screen title
-
+app_logo = pygame.image.load(resource_root + "Images\\icons\\_game_icon.png")
+title = pygame.image.load(resource_root + "Images\\icons\\title.png")
 
 if __name__ == '__main__':
     # A simple test for resource loading module
@@ -120,9 +134,9 @@ if __name__ == '__main__':
 
         predator.step()
         prey.step()
-        predator.draw(screen)
+        predator.draw(screen, size=(64, 64))
         prey.draw(screen)
-        if predator.get_cur_frame() == 0:
+        if predator.get_frame_id() == 0:
             n1 = (n1 + 1) % 4
             n2 = (n2 + 1) % 4
             predator = predator_anim_dict[n1 + 1]
