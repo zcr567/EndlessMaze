@@ -17,6 +17,17 @@ from vectors import *
 
 V = Vector
 
+DIFFICULTY_PRESETS = {
+    "easy":   None,
+    "normal": None,
+    "hard":   None,
+}
+# size presets: (min side length, max side length);
+SIZE_PRESETS = {
+    "small":  (4, 6),
+    "medium": (6, 8),
+    "large":  (8, 10),
+}
 
 # noinspection PyUnusedLocal
 def _(*args):

@@ -8,7 +8,8 @@ from pygame.draw import line
 
 from Resources import *
 from effects import *
-from maze import Maze
+from maze import Maze,DIFFICULTY_PRESETS,SIZE_PRESETS
+from widgets import WelcomeScreen, HUD
 from vectors import Cell, DIR_VECS
 # noinspection PyPep8Naming
 from vectors import Vector as V
@@ -31,6 +32,12 @@ class PlayerType(IntEnum):
 class GameMode(IntEnum):
     SINGLE = 0
     DOUBLE = 1
+
+
+class GameState(IntEnum):
+    MENU = 0
+    PLAYING = 1
+    PAUSED = 2
 
 
 class DispState(IntFlag):
@@ -146,16 +153,19 @@ class MazeGame:
     def __new__(cls, *args, **kwargs):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
-            return cls._instance
-        else:
-            raise RuntimeError(f'"{cls.__name__}" instance is already created')
+        return cls._instance
 
-    def __init__(self, surf: pygame.Surface, gamemode=GameMode.SINGLE):
-        # common
+    def __init__(self, surf, gamemode=GameMode.SINGLE,
+                 size_preset="medium", difficulty="normal"):
+        #common
         self.gamemode = gamemode
-        self.field_width = random.randint(3, self.MAX_MAZE_WIDTH)
-        self.field_height = random.randint(3, self.MAX_MAZE_HEIGHT)
-        self.maze: Maze = Maze((self.field_width, self.field_height))
+        self.size_preset = size_preset
+        self.difficulty = difficulty
+        side_min, side_max = SIZE_PRESETS[size_preset]
+        self.field_width = random.randint(side_min, side_max)
+        self.field_height = random.randint(side_min, side_max)
+        diff_kwargs = DIFFICULTY_PRESETS[difficulty] or {}
+        self.maze = Maze((self.field_width, self.field_height), **diff_kwargs)
         self.inst = self.maze.draw_instructions()
 
         # display related
@@ -221,13 +231,8 @@ class MazeGame:
     def game_logic(self):
         pass
 
-    def handle_events(self):
-        for event in pg.event.get():
-            if event.type == pg.QUIT:
-                pg.quit()
-                exit()
-            if event.type == pg.WINDOWSIZECHANGED:
-                self.update_arrangement()
+    def handle_events(self, events):
+        for event in events:
             if event.type == pg.KEYDOWN:
                 if event.key == pg.K_RIGHT:
                     self.players[0].move(Cell.GO_RIGHT)
@@ -244,11 +249,9 @@ class MazeGame:
     def update_display(self):
         self.screen.fill(self.bg_color)
         self.draw_maze()
-
-        screen.blit(self.maze_surf, (0, 0))
+        self.screen.blit(self.maze_surf, (0, 0))
         for p in self.players:
             p.draw()
-        pygame.display.flip()
 
 
 frame_id = 0
@@ -265,8 +268,74 @@ if __name__ == '__main__':
 
     main_game = MazeGame(screen)
 
+    welcome = WelcomeScreen(window_size)
+    hud = HUD(window_size)
+    main_game: MazeGame | None = None
+    sound_on = True
+    state = GameState.MENU
+
     while True:
         clock.tick(60)
-        main_game.handle_events()
-        main_game.game_logic()
-        main_game.update_display()
+        events = pg.event.get()
+
+        # 窗口级事件
+        for event in events:
+            if event.type == pg.QUIT:
+                pg.quit()
+                raise SystemExit
+            if event.type == pg.WINDOWSIZECHANGED:
+                window_size = pg.display.get_window_size()
+                welcome.resize(window_size)
+                hud.resize(window_size)
+                if main_game is not None:
+                    main_game.update_arrangement()
+
+        esc_pressed = any(e.type == pg.KEYDOWN and e.key == pg.K_ESCAPE for e in events)
+
+        if state == GameState.MENU:
+            action = welcome.handle_events(events)
+            if action == "start_single":
+                main_game = MazeGame(screen, size_preset=welcome.size_preset,
+                                     difficulty=welcome.difficulty)
+                hud.set_paused(False)
+                state = GameState.PLAYING
+            elif action == "toggle_sound":
+                sound_on = not sound_on
+            welcome.draw(screen)
+
+        elif state == GameState.PLAYING:
+            if esc_pressed:
+                state = GameState.PAUSED
+                hud.set_paused(True)
+            else:
+                main_game.handle_events(events)
+                action = hud.handle_events(events)
+                if action == "pause":
+                    state = GameState.PAUSED
+                    hud.set_paused(True)
+                elif action == "toggle_sound":
+                    sound_on = not sound_on
+            main_game.game_logic()
+            main_game.update_display()
+            hud.draw(screen, main_game.players[0].eaten)
+
+        else:  # GameState.PAUSED
+            if esc_pressed:
+                state = GameState.PLAYING
+                hud.set_paused(False)
+            else:
+                action = hud.handle_events(events)
+                if action == "resume":
+                    state = GameState.PLAYING
+                    hud.set_paused(False)
+                elif action == "quit_to_menu":
+                    state = GameState.MENU
+                    hud.set_paused(False)
+                elif action == "toggle_sound":
+                    sound_on = not sound_on
+            main_game.update_display()
+            hud.draw(screen, main_game.players[0].eaten)
+
+        welcome.set_sound(sound_on)
+        hud.set_sound(sound_on)
+        pygame.display.flip()

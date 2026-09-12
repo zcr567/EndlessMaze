@@ -1,444 +1,497 @@
 """
-A simple widget module for pygame.
-
-The skeleton is written by ZCR, and implementations are written by ZYY.
+A simple widget module for pygame written by zyw.
 """
 import pygame
+from Resources import icons_dict, title as TITLE_SURF
+from maze import Maze, SIZE_PRESETS,DIFFICULTY_PRESETS
+# colors to be used
+BACKGROUND_TOP=(190,230,205)
+BACKGROUND_BOTTOM=(160,210,220)
+TEAL = (63, 122, 106)
+TEAL_DARK = (47, 96, 83)
+DISABLED_TEXT = (132, 152, 146)
+HINT_TEXT=(70,105,95)
+WHITE=(255,255,255)
 
-focused = []
-root_widgets = []
-d_circle_counter = 0  # for display
+_font_cache = {}
 
+def make_font(size, bold=False):
+    key = (size, bold)
+    font = _font_cache.get(key)
+    if font is None:
+        font = pygame.font.Font(None, int(size))
+        font.set_bold(bold)
+        _font_cache[key] = font
+    return font
 
-# TODO: 做完记着把TODO删了（我是不是在说废话）
+def icon_coloring(surface,color):
+    img = surface.copy().convert_alpha()
+    img.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
+    return img
 
+def vertical_gradient(size, top_color, bottom_color):
+    w, h = size
+    surf = pygame.Surface((w, h))
+    for y in range(h):
+        t = y / (h - 1)
+        color = tuple(int(top_color[i] + (bottom_color[i] - top_color[i]) * t) for i in range(3))
+        pygame.draw.line(surf, color, (0, y), (w, y))
+    return surf
+class Button:
+    #a rounded button that can hold text or icon
 
-class Widget:
-    """base class for widgets"""
-    def __new__(cls, *args, **kwargs):
-        if cls is Widget:
-            raise RuntimeError("Cannot instantiate a widget directly")
-        return object.__new__(cls)
+    def __init__(self, text="", icon=None, style="ghost", enabled=True, on_light=False):
+        #style "solid" (filled teal, white content)
+        #      "ghost" (frosted white, teal content)
+        #icon must be handled by icon_coloring
+        #on_light is in case of ghost buttons being placed on a white background
+        self.text = text
+        self.icon = icon
+        self.style = style
+        self.enabled = enabled
+        self.on_light = on_light
+        self.rect = pygame.Rect(0, 0, 10, 10)
+        self.pressed = False
 
-    def __init__(self):
-        # when overriding this, guarantee the super() call occurred
-        # at the very beginning or the subclass codes will be overridden
-        self.children = []
-        self.parent = None
-        self.surface = None
-        self.rect = pygame.Rect(0, 0, 0, 0)
-        self._focus = False
-        self._x = 0
-        self._y = 0
+    def set_rect(self, rect):
+        self.rect = pygame.Rect(rect)
 
-    @property
-    def x(self):
-        return self._x
+    def _hovered(self):
+        return self.enabled and self.rect.collidepoint(pygame.mouse.get_pos())
 
-    @x.setter
-    def x(self, value):
-        self._x = value
-        self.rect.x = value
+    def handle_event(self, event):
+        #Return True if the button was clicked with the left mouse button
+        if not self.enabled:
+            return False
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.pressed = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            clicked = self.pressed and self.rect.collidepoint(event.pos)
+            self.pressed = False
+            return clicked
+        return False
 
-    @property
-    def y(self):
-        return self._y
-
-    @y.setter
-    def y(self, value):
-        self._y = value
-        self.rect.y = value
-
-    @property
-    def focus(self):
-        return self._focus
-
-    @focus.setter
-    def focus(self, val: bool):
-        if val != self._focus:
-            self._focus = val
-            if val:
-                focused.append(self)
+    def draw(self, surface):
+        radius = self.rect.height // 2
+        if self.style == "solid":
+            if not self.enabled:
+                fill = (155, 180, 170)
+            elif self.pressed:
+                fill = TEAL_DARK
+            elif self._hovered():
+                fill = (75, 140, 120)
             else:
-                focused.remove(self)
+                fill = TEAL
+            pygame.draw.rect(surface, fill, self.rect, border_radius=radius)
+            content_color = WHITE
+        elif self.on_light:
+            # ghost button on a white panel: a light mist-teal fill keeps it visible
+            if self.pressed:
+                fill = (215, 230, 225)
+            elif self._hovered():
+                fill = (225, 240, 235)
+            else:
+                fill = (235, 240, 240)
+            pygame.draw.rect(surface, fill, self.rect, border_radius=radius)
+            content_color = TEAL
+        else:#ghost
+            if not self.enabled:
+                alpha = 110
+                content_color = DISABLED_TEXT
+            elif self.pressed:
+                alpha = 200
+                content_color = TEAL_DARK
+            elif self._hovered():
+                alpha = 255
+                content_color = TEAL
+            else:
+                alpha = 225
+                content_color = TEAL
+            pill = pygame.Surface(self.rect.size, pygame.SRCALPHA)
+            pygame.draw.rect(pill, (255, 255, 255, alpha), pill.get_rect(), border_radius=radius)
+            surface.blit(pill, self.rect)
 
-    def update(self):
-        for child in reversed(self.children):
-            child.update()
+        # lay out icon + text as one centered group
+        parts = []
+        if self.icon is not None:
+            icon_size = int(self.rect.height * 0.46)
+            parts.append(pygame.transform.smoothscale(self.icon, (icon_size, icon_size)))
+        if self.text:
+            parts.append(make_font(int(self.rect.height * 0.40), bold=True).render(self.text, True, content_color))
+        gap = 10
+        total_w = sum(p.get_width() for p in parts) + gap * (len(parts) - 1)
+        x = self.rect.centerx - total_w // 2
+        for p in parts:
+            surface.blit(p, (x, self.rect.centery - p.get_height() // 2))
+            x += p.get_width() + gap
+class IconButton:
+    #a small round button showing a icon
+    def __init__(self, icon, size=44):
+        self.icon = icon
+        self.size = size
+        self.rect = pygame.Rect(0, 0, size, size)
+        self.pressed = False
 
-    def add_child(self, widget):
-        if isinstance(widget, Widget) and widget not in self.children:
-            self.children.append(widget)
-            widget.parent = self
+    def set_icon(self, icon):
+        self.icon = icon
 
-    def remove_child(self, widget):
-        if widget in self.children:
-            self.children.remove(widget)
-            widget.parent = None
+    def set_rect(self, rect):
+        self.rect = pygame.Rect(rect)
 
-    def draw(self, surface=None):
-        target_surface = surface or (self.parent.surface if self.parent else None)
-        if target_surface:
-            self.surface = target_surface
+    def _hovered(self):
+        return self.rect.collidepoint(pygame.mouse.get_pos())
 
-            for child in self.children:
-                child.draw(target_surface)
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                self.pressed = True
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            clicked = self.pressed and self.rect.collidepoint(event.pos)
+            self.pressed = False
+            return clicked
+        return False
 
-    def handle_events(self, events) -> list:
-
-        for child in reversed(self.children):
-            events = child.handle_events(events)
-        return events
-
-    def set_as_root(self):
-        root_widgets.append(self)
-
-    def cancel_root(self):
-        root_widgets.remove(self)
-
-
-class Container(Widget):
-    def __init__(self):
-        """A widget container. It is invisible but can hold multiple widgets as its children.
-        All of its children's x and y coordinates should be larger than 0, or they will not be fully displayed.
-        (Note that the class doesn't check this!)
-
-        About adding and moving children:
-            - Adding a widget as its child doesn't move it
-            - Moving the container (by setting the x and y property) moves all of its children"""
-        super().__init__()
-
-    @property
-    def x(self):
-        """the widget's X coordinate, any adjustment will be applied to the children's"""
-        return self._x
-
-    @x.setter
-    def x(self, value):
-        delta = value - self._x
-        self._x = value
-        self.rect.x = value
-        for widget in self.children:
-            widget.x += delta
-
-    @property
-    def y(self):
-        """the widget's Y coordinate, any adjustment will be applied to the children's"""
-        return self._y
-
-    @y.setter
-    def y(self, value):
-        delta = value - self._y
-        self._y = value
-        self.rect.y = value
-        for widget in self.children:
-            widget.y += delta
-
-
-
-
-class Label(Widget):
-    """a simple label widget to show texts"""
-
-    def __init__(self, text="", font: pygame.font.Font = None, color='black', alignment='left'):
-        super().__init__()
-        self._text = text
-        self._font_color = color
-        self._alignment = alignment
-        self._font = font
-        self._rendered_text = None
-        self._update_rendered_text()
-        self._x = 0
-        self._y = 0
-        self.width = self._rendered_text.get_width() if self._rendered_text else 0
-        self.height = self._rendered_text.get_height() if self._rendered_text else 0
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
-
-    def add_child(self, widget):
-        raise TypeError('Label objects cannot have children')
-
-    @property
-    def text(self):
-        """text to be shown"""
-        return self._text
-
-    @text.setter
-    def text(self, value):
-        self._text = value
-        self._update_rendered_text()
-
-        self.width = self._rendered_text.get_width() if self._rendered_text else 0
-        self.height = self._rendered_text.get_height() if self._rendered_text else 0
-
-    @property
-    def font_color(self):
-        return self._font_color
-
-    @font_color.setter
-    def font_color(self, value):
-        self._font_color = value
-        self._update_rendered_text()
-
-    @property
-    def alignment(self):
-        return self._alignment
-
-    @alignment.setter
-    def alignment(self, value):
-        allowed_alignments = ['left', 'center', 'right']
-        if value not in allowed_alignments:
-            raise ValueError(f"alignment must be one of {allowed_alignments}")
-        self._alignment = value
-        self._update_rendered_text()
-
-    def _update_rendered_text(self):
-        if self._font and self._text:
-            self._rendered_text = self._font.render(self._text, True, self._font_color)
+    def draw(self, surface):
+        if self.pressed:
+            alpha = 200
+        elif self._hovered():
+            alpha = 255
         else:
-            self._rendered_text = None
+            alpha = 220
+        circle = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        pygame.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
+        surface.blit(circle, self.rect)
+        icon_size = int(self.size * 0.56)
+        icon = pygame.transform.smoothscale(self.icon, (icon_size, icon_size))
+        surface.blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
 
-    def update(self):
-        self._update_rendered_text()
-        self.width = self._rendered_text.get_width() if self._rendered_text else 0
-        self.height = self._rendered_text.get_height() if self._rendered_text else 0
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+class OptionSelector:
+    #A labeled [<] current option [>] stepper laid out in one row.
 
-    def draw(self, surface=None):
-        target_surface = surface or (self.parent.surface if self.parent else None)
-        if target_surface and self._rendered_text:
-            if self._alignment == 'left':
-                x = self.x
-            elif self._alignment == 'center':
-                x = self.x + (self.width - self._rendered_text.get_width()) // 2
-            else:  # right
-                x = self.x + self.width - self._rendered_text.get_width()
-
-            y = self.y + (self.height - self._rendered_text.get_height()) // 2
-            target_surface.blit(self._rendered_text, (x, y))
-        super().draw(surface)
-
-
-class ImageButton(Widget):
-    pass
-    # TODO: 实现一个简单按钮类，鼠标点击会变成 pressed 状态，释放后又变回 normal，可以参照 ImageToggleButton 的实现
-    # 这个类主要会用到开始，退出等按钮上
-
-
-class ImageToggleButton(Widget):
-    """use an image as a toggle button
-    the image passed to the __init__ method will be used when the button`s state is 'normal'
-    and other images will be generated automatically.
-    if some buttons belong to the same group, only one of them is in 'pressed' state.
-    """
-
-    # TODO: change the toggle display effect
-    # 这个按钮类也有两个状态，区别是这里按下后改变状态并且保持，而不是变成pressed。主要会用到游戏的各种按钮，比如暂停/开始, 声音开/关
-
-    # 类级别的编组注册表
-    _groups = {}
-
-    def __init__(self,
-                 image,
-                 pressed_image=None,
-                 disabled_image=None,
-                 group: str = None,
-                 enabled=True,
-                 allow_all_release=True,
-                 toggle_effect=None):  # TODO: 这里只加了一个参数，没有完善逻辑。默认效果就是按下变成深色，看看能不能加一点比较丝滑的效果（如果需要新的效果类型，就写在effects）
-        super().__init__()
-        self._original_image = image
-        self._enabled = enabled
-        self._pressed = False
-        self.allow_all_release = allow_all_release
-
-        self._normal_image = image
-        self._pressed_image = self._adjust_brightness(image, 0.7) if pressed_image is None else pressed_image
-        self._disabled_image = self._convert_to_grayscale(image) if disabled_image is None else disabled_image
-
-        self._on_press = None
-        self._on_release = None
-
-        self.width = image.get_width()
-        self.height = image.get_height()
-        self.rect = pygame.rect.Rect(self.x, self.y, self.width, self.height)
-        self.toggle_effect = toggle_effect
-
-        self._group = group
-        if group:
-            if group not in ImageToggleButton._groups:
-                ImageToggleButton._groups[group] = []
-            ImageToggleButton._groups[group].append(self)
-
-    def add_child(self, widget):
-        raise TypeError('ImageToggleButton cannot have children')
-
-    @staticmethod
-    def _adjust_brightness(surface, factor):
-        bright_surface = pygame.Surface(surface.get_size(), pygame.SRCALPHA)
-        bright_surface.fill((255 * factor, 255 * factor, 255 * factor, 255))
-        bright_surface.blit(surface, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
-        return bright_surface
-
-    @staticmethod
-    def _convert_to_grayscale(surface):
-        gray_surface = pygame.transform.grayscale(surface)
-        return gray_surface.convert_alpha()
+    def __init__(self, label, options, index=0):
+        self.label = label
+        self.options = options
+        self.index = index
+        self.rect = pygame.Rect(0, 0, 10, 10)
+        self._pill_rect = pygame.Rect(0, 0, 10, 10)
+        self._left_rect = pygame.Rect(0, 0, 10, 10)
+        self._right_rect = pygame.Rect(0, 0, 10, 10)
+        self._pressed = None
 
     @property
-    def state(self):
-        """possible states: 'pressed', 'released', 'disabled_pressed', 'disabled_released'"""
-        if not self._enabled:
-            return "disabled_pressed" if self._pressed else "disabled_released"
-        return "pressed" if self._pressed else "released"
+    def value(self):
+        return self.options[self.index]
 
-    @property
-    def enabled(self):
-        return self._enabled
+    def set_rect(self, rect):
+        self.rect = pygame.Rect(rect)
+        h = self.rect.height
+        pill_w = int(self.rect.width * 0.58)
+        self._pill_rect = pygame.Rect(self.rect.right - pill_w, self.rect.y, pill_w, h)
+        self._left_rect = pygame.Rect(self._pill_rect.x, self.rect.y, h, h)
+        self._right_rect = pygame.Rect(self._pill_rect.right - h, self.rect.y, h, h)
 
-    @enabled.setter
-    def enabled(self, value):
-        self._enabled = value
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self._left_rect.collidepoint(event.pos):
+                self._pressed = "left"
+            elif self._right_rect.collidepoint(event.pos):
+                self._pressed = "right"
+        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
+            hit = self._pressed
+            self._pressed = None
+            if hit == "left" and self._left_rect.collidepoint(event.pos):
+                self._step(-1)
+                return True
+            if hit == "right" and self._right_rect.collidepoint(event.pos):
+                self._step(1)
+                return True
+        return False
 
-    @property
-    def pressed(self):
-        return self._pressed
+    def _step(self, direction):
+        self.index = (self.index + direction) % len(self.options)
 
-    @pressed.setter
-    def pressed(self, value):
-        if self._enabled and self._pressed != value:
-            self._pressed = value
-            if value:
-                if self._group and self._group in ImageToggleButton._groups:
-                    for button in ImageToggleButton._groups[self._group]:
-                        if button != self and button.pressed:
-                            button.pressed = False
-                if self._on_press:
-                    self._on_press()
+    def draw(self, surface):
+        # label
+        font = make_font(int(self.rect.height * 0.46), bold=True)
+        text = font.render(self.label, True, TEAL)
+        surface.blit(text, (self.rect.x, self.rect.centery - text.get_height() // 2))
+
+        # pill
+        pill = pygame.Surface(self._pill_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(pill, (255, 255, 255, 220), pill.get_rect(),
+                         border_radius=self._pill_rect.height // 2)
+        surface.blit(pill, self._pill_rect)
+
+        # current option
+        font = make_font(int(self.rect.height * 0.40), bold=True)
+        text = font.render(self.options[self.index].upper(), True, TEAL)
+        surface.blit(text, (self._pill_rect.centerx - text.get_width() // 2,
+                            self._pill_rect.centery - text.get_height() // 2))
+
+        # arrows
+        for side, rect in (("left", self._left_rect), ("right", self._right_rect)):
+            hovered = rect.collidepoint(pygame.mouse.get_pos())
+            color = TEAL_DARK if self._pressed == side or hovered else TEAL
+            cx, cy = rect.center
+            w, hh = self.rect.height * 0.10, self.rect.height * 0.16
+            if side == "right":
+                points = ((cx - w, cy - hh), (cx + w, cy), (cx - w, cy + hh))
             else:
-                if self._on_release:
-                    self._on_release()
+                points = ((cx + w, cy - hh), (cx - w, cy), (cx + w, cy + hh))
+            pygame.draw.polygon(surface, color, points)
+
+class WelcomeScreen:
+    #The main menu
+
+    DECO_COLS = 12
+    DECO_ROWS = 7
+
+    def __init__(self, size):
+        self.size = size
+        self.sound_on = True
+
+        # decorative faint maze behind the menu
+        self._deco = Maze((self.DECO_COLS, self.DECO_ROWS),
+                          start=(0, 0), end=(self.DECO_COLS - 1, self.DECO_ROWS - 1))
+        self._deco_inst = self._deco.draw_instructions()
+        self._deco_surf = None
+
+        self.sound_btn = IconButton(self._sound_icon(), size=46)
+        self.single_btn = Button("SINGLE PLAYER", icon=icons_dict["play"], style="solid")
+        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", enabled=False)
+
+        # maze option selectors; option keys follow the maze preset dictionaries
+        self.size_selector = OptionSelector("SIZE", list(SIZE_PRESETS), index=1)
+        self.diff_selector = OptionSelector("DIFFICULTY", list(DIFFICULTY_PRESETS), index=1)
+        self._card_rect = pygame.Rect(0, 0, 10, 10)
+
+        self.bg = None
+        self.title_img = None
+        self.title_pos = (0, 0)
+        self.title_shadow = None
+        self.hint_img = None
+        self.hint_pos = (0, 0)
+        self.resize(size)
+
+    # -- chosen options --
+    @property
+    def size_preset(self):
+        return self.size_selector.value
 
     @property
-    def image(self):
-        return self._original_image
+    def difficulty(self):
+        return self.diff_selector.value
 
-    @image.setter
-    def image(self, value):
-        self._original_image = value
-        self._normal_image = value
-        self._pressed_image = self._adjust_brightness(value, 0.7)
-        self._disabled_image = self._convert_to_grayscale(value)
+    # -- sound state --
+    def _sound_icon(self):
+        return icon_coloring(icons_dict["sound_on" if self.sound_on else "sound_off"], TEAL)
 
-        # 更新尺寸
-        self.width = value.get_width()
-        self.height = value.get_height()
+    def set_sound(self, on):
+        if on == self.sound_on:
+            return
+        self.sound_on = on
+        self.sound_btn.set_icon(self._sound_icon())
+    def resize(self, size):
+        self.size = size
+        w, h = size
+        self.bg = vertical_gradient(size, BACKGROUND_TOP, BACKGROUND_BOTTOM)
+        self._render_deco()
 
-    def set_on_press(self, callback):
-        self._on_press = callback
+        # title: up to 86% of the width and 13% of the height, keeps aspect
+        aspect = TITLE_SURF.get_width() / TITLE_SURF.get_height()
+        title_h = min(int(h * 0.13), int(w * 0.86 / aspect))
+        title_w = int(title_h * aspect)
+        self.title_img = pygame.transform.smoothscale(TITLE_SURF.convert_alpha(), (title_w, title_h))
+        shadow = TITLE_SURF.copy().convert_alpha()
+        shadow.fill((45, 85, 75, 255), special_flags=pygame.BLEND_RGBA_MULT)
+        self.title_shadow = pygame.transform.smoothscale(shadow, (title_w, title_h))
+        self.title_shadow.set_alpha(60)
+        self.title_pos = ((w - title_w) // 2, int(h * 0.15) - title_h // 2)
 
-    def set_on_release(self, callback):
-        self._on_release = callback
+        # options card
+        cx = w // 2
+        btn_w = min(int(w * 0.66), 320)
+        card_h = min(150, max(96, int(h * 0.18)))
+        card_top = int(h * 0.335)
+        self._card_rect = pygame.Rect(cx - btn_w // 2, card_top, btn_w, card_h)
+        pad_x, pad_y = 18, 12
+        row_h = (card_h - pad_y * 3) // 2
+        row_x = self._card_rect.x + pad_x
+        row_w = btn_w - pad_x * 2
+        self.size_selector.set_rect(
+            (row_x, card_top + pad_y, row_w, row_h))
+        self.diff_selector.set_rect(
+            (row_x, card_top + pad_y * 2 + row_h, row_w, row_h))
 
-    def update(self):
-        self.rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        # buttons
+        btn_h = max(54, int(h * 0.078))
+        gap = int(btn_h * 0.4)
+        top = self._card_rect.bottom + gap
+        self.single_btn.set_rect((cx - btn_w // 2, top, btn_w, btn_h))
+        self.double_btn.set_rect((cx - btn_w // 2, top + btn_h + gap, btn_w, btn_h))
 
+        s = self.sound_btn.size
+        self.sound_btn.set_rect((w - s - 22, 22, s, s))
+
+        self.hint_img = make_font(max(14, int(h * 0.022))).render(
+            "MADE BY ZCR AND ZYW", True, HINT_TEXT)
+        self.hint_img.set_alpha(255)
+        self.hint_pos = (cx - self.hint_img.get_width() // 2, h - self.hint_img.get_height() - 26)
+
+    def _render_deco(self):
+        #Render the faint decorative maze, centered behind the menu.
+        w, h = self.size
+        cols, rows = self.DECO_COLS, self.DECO_ROWS
+        cw = min(w / (cols * 1.5), h / (rows * 1.5))
+        edge_w = max(4, int(cw // 8))
+        mw, mh = cw * cols, cw * rows
+        ox, oy = (w - mw) / 2, (h - mh) / 2 + h * 0.08
+        self._deco_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        line_color = (255, 255, 255, 46)
+        inst = self._deco_inst
+        for row in range(rows * 2 + 1):
+            for col in range(cols * 2 + 1):
+                op = inst[row][col]
+                x = int(ox + cw * (col // 2))
+                y = int(oy + cw * (row // 2))
+                if row % 2 == 0 and col % 2 == 1 and op == 0:
+                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x + int(cw), y), edge_w)
+                elif row % 2 == 1 and col % 2 == 0 and op == 0:
+                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x, y + int(cw)), edge_w)
+                if row % 2 == 0 and col % 2 == 0 and edge_w > 2:
+                    pygame.draw.circle(self._deco_surf, line_color, (x, y), edge_w // 2)
     def handle_events(self, events):
-        if self._enabled:
-            for event in events:
-                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-                    if self.rect.collidepoint(event.pos):
-                        events.remove(event)
-                        if not (self.pressed and not self.allow_all_release) or not self.pressed:
-                            self.pressed = not self.pressed
-                            if self.pressed:
-                                if self._on_press is not None:
-                                    self._on_press()
-                            else:
-                                if self._on_release is not None:
-                                    self._on_release()
-
-        events = super().handle_events(events)
-        return events
-
-    def draw(self, surface=None):
-        target_surface = surface or (self.parent.surface if self.parent else None)
-        if target_surface:
-            if not self._enabled:
-                current_image = self._disabled_image
-            else:
-                current_image = self._pressed_image if self._pressed else self._normal_image
-
-            target_surface.blit(current_image, (self.x, self.y))
-
-
-class ProgressBar(Widget):
-    # TODO: complete the class
-    def __init__(self, parent):
-        super().__init__()
-
-
-def update_widgets(events, surface):
-
-    for w in root_widgets:
-        events = w.handle_events(events)
-        w.draw(surface)
-    return events
-
-
-def draw_widgets(surface):
-    global d_circle_counter
-    d_circle_counter += 1
-    if d_circle_counter == 72:
-        d_circle_counter = 0
-    for w in root_widgets:
-        w.draw(surface)
-
-
-def handle_events(events):
-    for w in root_widgets:
-        events = w.handle_events(events)
-    return events
-
-
-def test():
-    import pygame
-    pygame.init()
-    test_font = pygame.font.Font('Resources/Fonts/impact.ttf', 20)
-    screen = pygame.display.set_mode((800, 600))
-    pygame.display.set_caption("Widgets Test")
-
-    root = Container()
-    root.set_as_root()
-
-    label = Label(text='hello world', font=test_font)
-    root.add_child(label)
-
-    img = pygame.image.load('Resources/Images/icons/_play.png')
-    img = pygame.transform.smoothscale(img, (50, 50))
-    button = ImageToggleButton(img, group='test1')
-    button.x = 100
-    root.add_child(button)
-
-    root.x = 200
-    root.y = 300
-
-    running = True
-    clock = pygame.time.Clock()
-
-    while running:
-        screen.fill((108, 255, 108))
-        events = pygame.event.get()
+        #Process one frame's events, return an action string or None.
         for event in events:
-            if event.type == pygame.QUIT:
-                running = False
+            if self.sound_btn.handle_event(event):
+                return "toggle_sound"
+            if self.single_btn.handle_event(event):
+                return "start_single"
+            self.double_btn.handle_event(event)
+            self.size_selector.handle_event(event)
+            self.diff_selector.handle_event(event)
+            if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
+                return "start_single"
+        return None
 
-        update_widgets(events, screen)
+    def draw(self, surface):
+        surface.blit(self.bg, (0, 0))
+        surface.blit(self._deco_surf, (0, 0))
+        surface.blit(self.title_shadow, (self.title_pos[0] + 3, self.title_pos[1] + 5))
+        surface.blit(self.title_img, self.title_pos)
 
-        pygame.display.flip()
-        clock.tick(60)
+        # options card
+        card = pygame.Surface(self._card_rect.size, pygame.SRCALPHA)
+        pygame.draw.rect(card, (255, 255, 255, 150), card.get_rect(), border_radius=22)
+        surface.blit(card, self._card_rect)
+        self.size_selector.draw(surface)
+        self.diff_selector.draw(surface)
 
-    pygame.quit()
+        self.double_btn.draw(surface)
+        self.single_btn.draw(surface)
+        self.sound_btn.draw(surface)
+        surface.blit(self.hint_img, self.hint_pos)
+class HUD:
+    #In-game heads-up display: score pill, pause / sound buttons, pause panel.
 
+    def __init__(self, size):
+        self.size = size
+        self.sound_on = True
+        self.paused = False
 
-if __name__ == '__main__':
-    test()
+        self.pause_btn = IconButton(icon_coloring(icons_dict["pause"], TEAL), size=42)
+        self.sound_btn = IconButton(self._sound_icon(), size=42)
+
+        self.resume_btn = Button("RESUME", icon=icons_dict["play"], style="solid")
+        self.menu_btn = Button("MENU", style="ghost", on_light=True)
+
+        self._score_icon = None
+        self._panel_rect = None
+        self._panel_title = None
+        self._panel_hint = None
+        self.resize(size)
+
+    # -- state --
+    def _sound_icon(self):
+        return icon_coloring(icons_dict["sound_on" if self.sound_on else "sound_off"], TEAL)
+
+    def set_sound(self, on):
+        if on == self.sound_on:
+            return
+        self.sound_on = on
+        self.sound_btn.set_icon(self._sound_icon())
+
+    def set_paused(self, paused):
+        self.paused = paused
+
+    # -- layout --
+    def resize(self, size):
+        self.size = size
+        w, h = size
+        s = self.pause_btn.size
+        self.pause_btn.set_rect((w - s - 16, 16, s, s))
+        self.sound_btn.set_rect((w - s * 2 - 28, 16, s, s))
+        self._score_icon = pygame.transform.smoothscale(
+            icons_dict["eat_icon_v1"].convert_alpha(), (26, 26))
+
+        # pause panel
+        pw, ph = min(int(w * 0.78), 380), 250
+        self._panel_rect = pygame.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
+        btn_w, btn_h = int(pw * 0.62), 52
+        bx = self._panel_rect.centerx - btn_w // 2
+        self.resume_btn.set_rect((bx, self._panel_rect.y + 100, btn_w, btn_h))
+        self.menu_btn.set_rect((bx, self._panel_rect.y + 100 + btn_h + 18, btn_w, btn_h))
+        self._panel_title = make_font(30, bold=True).render("PAUSED", True, TEAL)
+        self._panel_hint = make_font(16).render("PRESS ESC TO RESUME", True, HINT_TEXT)
+    # -- events / drawing --
+    def handle_events(self, events):
+        for event in events:
+            if self.paused:
+                if self.resume_btn.handle_event(event):
+                    return "resume"
+                if self.menu_btn.handle_event(event):
+                    return "quit_to_menu"
+            else:
+                if self.pause_btn.handle_event(event):
+                    return "pause"
+                if self.sound_btn.handle_event(event):
+                    return "toggle_sound"
+        return None
+
+    def draw(self, surface, score=0):
+        # score pill (top-left)
+        text = make_font(20, bold=True).render(f"x {score}", True, TEAL)
+        pad = 9
+        pill_w = pad * 2 + self._score_icon.get_width() + 6 + text.get_width()
+        pill_h = 40
+        pill = pygame.Surface((pill_w, pill_h), pygame.SRCALPHA)
+        pygame.draw.rect(pill, (255, 255, 255, 220), pill.get_rect(), border_radius=pill_h // 2)
+        surface.blit(pill, (16, 16))
+        surface.blit(self._score_icon, (16 + pad, 16 + (pill_h - self._score_icon.get_height()) // 2))
+        surface.blit(text, (16 + pad + self._score_icon.get_width() + 6,
+                            16 + (pill_h - text.get_height()) // 2))
+
+        if self.paused:
+            self._draw_pause_panel(surface)
+        else:
+            self.pause_btn.draw(surface)
+            self.sound_btn.draw(surface)
+
+    def _draw_pause_panel(self, surface):
+        w, h = self.size
+        scrim = pygame.Surface((w, h), pygame.SRCALPHA)
+        scrim.fill((35, 58, 52, 120))
+        surface.blit(scrim, (0, 0))
+
+        r = self._panel_rect
+        panel = pygame.Surface(r.size, pygame.SRCALPHA)
+        pygame.draw.rect(panel, (255, 255, 255, 245), panel.get_rect(), border_radius=24)
+        surface.blit(panel, r)
+
+        surface.blit(self._panel_title,
+                     (r.centerx - self._panel_title.get_width() // 2, r.y + 34))
+        surface.blit(self._panel_hint,
+                     (r.centerx - self._panel_hint.get_width() // 2, r.y + 72))
+        self.resume_btn.draw(surface)
+        self.menu_btn.draw(surface)
