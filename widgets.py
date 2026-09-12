@@ -19,3 +19,7 @@ class Widget(pygame.Surface):
 
     def update(self, delta):
         raise NotImplementedError
+
+class Animation:
+    def __init__(self, surface):
+        pass

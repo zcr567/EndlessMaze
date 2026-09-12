@@ -3,6 +3,7 @@ Simple property adjustments & animated effects for pygame surfaces.
 
 The skeleton is written by ZCR, and implementations are written by ZYY.
 """
+import sys
 
 import pygame
 
@@ -137,6 +138,7 @@ class Effect:
             return
 
 
+# 可以把动画持续时间也放到形参
 class ChangeColor(Effect):
     def __init__(self, surface: pygame.Surface, color, interpolation=Linear):
         super(ChangeColor, self).__init__(surface, interpolation=interpolation)
@@ -145,3 +147,20 @@ class ChangeColor(Effect):
     def update(self):
         raise NotImplementedError
         # TODO: implement the function
+
+
+if __name__ == '__main__':
+    # 测试用的窗口，可以在里面塞各种想要测试的代码
+    pygame.init()
+    screen = pygame.display.set_mode((800, 600))
+    # 初始化
+
+    # 初始化
+    while True:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+        # 每循环调用的代码
+
+        # 每循环调用的代码

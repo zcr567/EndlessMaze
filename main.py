@@ -1,11 +1,15 @@
 import os
 import random
+from enum import IntEnum
 
 import pygame
 import pygame as pg
 from pygame.draw import line, circle
 
 from maze import Maze
+
+# executable generating command
+# pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
 
 window_pos = (0, 30)
 os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
@@ -33,6 +37,7 @@ region = (0, 0)
 
 
 def update_arrangement():
+    """update the screen size variables, call every time the screen size changes"""
     global window_size, points_surf, maze_surf, cell_width, size, region, maze_edge_width
     window_size = pg.display.get_window_size()
     points_surf = pygame.Surface(window_size, pygame.SRCALPHA)
@@ -86,9 +91,40 @@ def draw_maze(_maze, extra_points=None, color="red", flip=True):
                    4)
 
 
+class PlayerType(IntEnum):
+    SINGLE = 0
+    PREDATOR = 1
+    prey = 2
+
+
+class GameMode(IntEnum):
+    SINGLE = 0
+    DOUBLE = 1
+
+
+game_mode = GameMode.SINGLE
+
+
+class Player:
+    def __init__(self, maze, row=0, col=0, player_type: int = 0):
+        self.maze = maze
+        self.player_type = player_type
+        self.row = 0
+        self.col = 0
+        pass
+
+    def move(self):
+        self.maze.get_p()
+
+    def draw(self):
+        if game_mode == GameMode.SINGLE:
+            pass
+        (int(region[0] + cell_width * (self.col + 0.5) + 1),
+         int(region[1] + cell_width * (self.row + 0.5)) + 1)
+
+
 def mainloop_once(_maze, extra_points=None, color=None, flip=True):
     clock.tick(60)
-    update_arrangement()
 
     screen.fill(bg_color)
     draw_maze(_maze, extra_points, color, flip)
@@ -113,10 +149,17 @@ frame_id = 0
 if __name__ == '__main__':
     maze0 = Maze((field_width, field_height))
 
+
+    update_arrangement()
     while True:
         clock.tick(60)
         for event in pg.event.get():
             if event.type == pg.QUIT:
                 pg.quit()
                 exit()
+            if event.type == pg.WINDOWSIZECHANGED:
+                update_arrangement()
+            else:
+                pass
+                # print(event)
         mainloop_once(maze0)

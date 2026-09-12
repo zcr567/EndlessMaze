@@ -80,7 +80,7 @@ class Maze:
             while self._start == self._end:
                 self._start = self._b_select()
         else:
-            if self._is_valid_coord(start):
+            if self.is_valid_coord(start):
                 self._start = start
             else:
                 raise ValueError("Invalid coordinate for parameter start")
@@ -90,12 +90,12 @@ class Maze:
             while abs(self._start[0] - self._end[0]) + abs(self._start[1] - self._end[1]) < 2:
                 self._start = self._b_select()
         else:
-            if self._is_valid_coord(end):
+            if self.is_valid_coord(end):
                 self._end = end
             else:
                 raise ValueError("Invalid coordinate for parameter end")
 
-        self._set_p(self._start, 5)
+        self.set_p(self._start, 5)
         self.generate()
 
     # do NOT change the order of the two lists below
@@ -125,7 +125,7 @@ class Maze:
         # maze path corners and maze path edges
         for row in range(1, self._height * 2 + 1, 2):
             for col in range(1, self._width * 2 + 1, 2):
-                direction = self._get_p((col // 2, row // 2))
+                direction = self.get_p((col // 2, row // 2))
                 if (col // 2, row // 2) == self._start or (col // 2, row // 2) == self._end:  # start or end of the maze
                     if row // 2 == 0:
                         inst[0][col - 1] |= 1
@@ -218,16 +218,16 @@ class Maze:
             f.write("\n")
             f.write(content)
 
-    def _set_p(self, point, value):
+    def set_p(self, point, value):
         self._data[point[1]][point[0]] = value
 
-    def _get_p(self, point):
+    def get_p(self, point):
         return self._data[point[1]][point[0]]
 
-    def _is_valid_coord(self, point: vec_like) -> bool:
+    def is_valid_coord(self, point: vec_like) -> bool:
         return 0 <= point[0] < self._width and 0 <= point[1] < self._height
 
-    def _is_valid_empty(self, point: vec_like) -> bool:
+    def is_valid_empty(self, point: vec_like) -> bool:
         return (0 <= point[0] < self._width
                 and 0 <= point[1] < self._height
                 and self._data[point[1]][point[0]] == Cell.EMPTY)
@@ -236,7 +236,7 @@ class Maze:
         """Return the available (i.e. it is empty) points next to the given point."""
         available = []
         for pp in [V(0, 1), V(0, -1), V(1, 0), V(-1, 0)]:
-            if self._is_valid_empty(p + pp):
+            if self.is_valid_empty(p + pp):
                 available.append(pp)
         return available
 
@@ -244,7 +244,7 @@ class Maze:
         """update the whole right path in self._data property"""
         prev = V(self._right_path[0])
         for point in self._right_path[1:]:
-            self._set_p(point, DIR_ENUMS[point - prev])
+            self.set_p(point, DIR_ENUMS[point - prev])
             prev = V(point)
 
     def _bend(self):
@@ -275,11 +275,11 @@ class Maze:
             else:
                 raise ValueError(f"the line {ln} is neither horizontal nor vertical")
 
-            while (self._is_valid_empty(p1 + max_offset)
-                   and self._is_valid_empty(p2 + max_offset)):
+            while (self.is_valid_empty(p1 + max_offset)
+                   and self.is_valid_empty(p2 + max_offset)):
                 max_offset = max_offset + step
-            while (self._is_valid_empty(p1 + min_offset)
-                   and self._is_valid_empty(p2 + min_offset)):
+            while (self.is_valid_empty(p1 + min_offset)
+                   and self.is_valid_empty(p2 + min_offset)):
                 min_offset = min_offset - step
 
             if step[0]:  # horizontal offset
@@ -291,7 +291,7 @@ class Maze:
             for p in ln[1:-1]:
                 tmp = available.copy()
                 for offset in tmp:
-                    if self._get_p(p + offset) != Cell.EMPTY:
+                    if self.get_p(p + offset) != Cell.EMPTY:
                         available.remove(offset)
 
             try:
@@ -319,7 +319,7 @@ class Maze:
 
         self._right_path = self._right_path[:insert_pos] + self._right_path[insert_pos + len(ln) - 1:]
         for p in ln[1:]:
-            self._set_p(p, Cell.EMPTY)
+            self.set_p(p, Cell.EMPTY)
 
         # path register
         self._right_path = (self._right_path[:insert_pos]
@@ -376,7 +376,7 @@ class Maze:
                 if random() > self.MAKING_BRANCH_PROB:
                     continue
                 cur_p = p
-                while True:  # a single path
+                while True:  # a SINGLE path
                     if random() > self.BRANCH_EXTEND_PROB:
                         break
                     available = self._available(cur_p)
@@ -386,7 +386,7 @@ class Maze:
                         vec = choice(available)
                         cur_p += vec
                         new.append(cur_p)
-                        self._set_p(cur_p, DIR_ENUMS[vec])
+                        self.set_p(cur_p, DIR_ENUMS[vec])
                         bp_count += 1
             existing = new
             if bp_count <= self.BRANCH_THR:
