@@ -30,18 +30,6 @@ def count(start, stop):
         return range(start, stop)
 
 
-# noinspection PyUnusedLocal
-def debug_callback_hook(_maze, extra_points=None, color="red"):
-    pass
-
-
-def set_callback_hook(func):
-    """Set the debug callback hook, should not use in the final application"""
-    # noinspection PyGlobalUndefined
-    global debug_callback_hook
-    debug_callback_hook = func
-
-
 class Maze:
 
     def __init__(self, size: vec_like = (10, 10), start: vec_like = None, end: vec_like = None, filepath=None):
