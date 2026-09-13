@@ -1,33 +1,47 @@
 """
 A simple widget module for pygame written by zyw.
 """
+
+import sys
+
 import pygame
-from Resources import icons_dict, title as TITLE_SURF
-from maze import Maze, SIZE_PRESETS,DIFFICULTY_PRESETS
+
+from Resources import icons_dict, main_font_path, title as title_surf
+from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
+from utils import adjust_color
+
 # colors to be used
-BACKGROUND_TOP=(190,230,205)
-BACKGROUND_BOTTOM=(160,210,220)
-TEAL = (63, 122, 106)
-TEAL_DARK = (47, 96, 83)
 DISABLED_TEXT = (132, 152, 146)
-HINT_TEXT=(70,105,95)
-WHITE=(255,255,255)
+HINT_TEXT = (70, 105, 95)
+
+main_color = (63, 122, 106)
+palette = [(0, 0, 0)] + [adjust_color(main_color, i) for i in (0.2, 0.4, 0.8, 1, 1.2, 1.8, 2)] + [(255, 255, 255)]
 
 _font_cache = {}
+
+
+def set_theme(color):
+    global main_color, palette
+    main_color = color
+    palette = [(0, 0, 0)] + [adjust_color(main_color, i) for i in (0.2, 0.4, 0.8, 1, 1.2, 1.8, 2)] + [(255, 255, 255)]
+    print(palette)
+
 
 def make_font(size, bold=False):
     key = (size, bold)
     font = _font_cache.get(key)
     if font is None:
-        font = pygame.font.Font(None, int(size))
+        font = pygame.font.Font(main_font_path, int(size))
         font.set_bold(bold)
         _font_cache[key] = font
     return font
 
-def icon_coloring(surface,color):
+
+def icon_coloring(surface, color):
     img = surface.copy().convert_alpha()
     img.fill((*color, 255), special_flags=pygame.BLEND_RGBA_MULT)
     return img
+
 
 def vertical_gradient(size, top_color, bottom_color):
     w, h = size
@@ -37,21 +51,14 @@ def vertical_gradient(size, top_color, bottom_color):
         color = tuple(int(top_color[i] + (bottom_color[i] - top_color[i]) * t) for i in range(3))
         pygame.draw.line(surf, color, (0, y), (w, y))
     return surf
-class Button:
-    #a rounded button that can hold text or icon
 
-    def __init__(self, text="", icon=None, style="ghost", enabled=True, on_light=False):
-        #style "solid" (filled teal, white content)
-        #      "ghost" (frosted white, teal content)
-        #icon must be handled by icon_coloring
-        #on_light is in case of ghost buttons being placed on a white background
-        self.text = text
-        self.icon = icon
-        self.style = style
-        self.enabled = enabled
-        self.on_light = on_light
+
+class ButtonBase:
+    def __init__(self, callback=None):
         self.rect = pygame.Rect(0, 0, 10, 10)
+        self.enabled = True
         self.pressed = False
+        self.callback = callback
 
     def set_rect(self, rect):
         self.rect = pygame.Rect(rect)
@@ -60,31 +67,51 @@ class Button:
         return self.enabled and self.rect.collidepoint(pygame.mouse.get_pos())
 
     def handle_event(self, event):
-        #Return True if the button was clicked with the left mouse button
         if not self.enabled:
             return False
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.rect.collidepoint(event.pos):
                 self.pressed = True
+                if self.callback is not None:
+                    self.callback(self)
+                    return True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            clicked = self.pressed and self.rect.collidepoint(event.pos)
             self.pressed = False
-            return clicked
         return False
+
+
+class Button(ButtonBase):
+
+    def __init__(self, text="", icon=None, style="ghost", enabled=True, on_light=False, callback=None):
+        """
+        A rounded button that can hold text or icon.
+            :param style: Literal["solid"|"ghost"]
+                "solid" (filled teal, white content)
+                "ghost" (frosted white, teal content)
+            :param on_light: in case of ghost buttons being placed on a white background
+            :param callback: callback function, accepting 1 positional argument "button", any of its return will be
+                discarded
+            icon must be handled by icon_coloring
+        """
+        super().__init__(callback=callback)
+        self.text = text
+        self.icon = icon
+        self.style = style
+        self.on_light = on_light
 
     def draw(self, surface):
         radius = self.rect.height // 2
         if self.style == "solid":
             if not self.enabled:
-                fill = (155, 180, 170)
+                fill = palette[4]
             elif self.pressed:
-                fill = TEAL_DARK
+                fill = palette[3]
             elif self._hovered():
-                fill = (75, 140, 120)
+                fill = palette[5]
             else:
-                fill = TEAL
+                fill = main_color
             pygame.draw.rect(surface, fill, self.rect, border_radius=radius)
-            content_color = WHITE
+            content_color = palette[-1]
         elif self.on_light:
             # ghost button on a white panel: a light mist-teal fill keeps it visible
             if self.pressed:
@@ -94,20 +121,20 @@ class Button:
             else:
                 fill = (235, 240, 240)
             pygame.draw.rect(surface, fill, self.rect, border_radius=radius)
-            content_color = TEAL
-        else:#ghost
+            content_color = main_color
+        else:  # ghost
             if not self.enabled:
                 alpha = 110
                 content_color = DISABLED_TEXT
             elif self.pressed:
                 alpha = 200
-                content_color = TEAL_DARK
+                content_color = palette[4]
             elif self._hovered():
                 alpha = 255
-                content_color = TEAL
+                content_color = palette[5]
             else:
                 alpha = 225
-                content_color = TEAL
+                content_color = palette[4]
             pill = pygame.Surface(self.rect.size, pygame.SRCALPHA)
             pygame.draw.rect(pill, (255, 255, 255, alpha), pill.get_rect(), border_radius=radius)
             surface.blit(pill, self.rect)
@@ -118,39 +145,31 @@ class Button:
             icon_size = int(self.rect.height * 0.46)
             parts.append(pygame.transform.smoothscale(self.icon, (icon_size, icon_size)))
         if self.text:
-            parts.append(make_font(int(self.rect.height * 0.40), bold=True).render(self.text, True, content_color))
+            parts.append(make_font(int(self.rect.height * 0.40)).render(self.text, True, content_color))
         gap = 10
         total_w = sum(p.get_width() for p in parts) + gap * (len(parts) - 1)
         x = self.rect.centerx - total_w // 2
         for p in parts:
             surface.blit(p, (x, self.rect.centery - p.get_height() // 2))
             x += p.get_width() + gap
-class IconButton:
-    #a small round button showing a icon
-    def __init__(self, icon, size=44):
+
+
+class IconButton(ButtonBase):
+    def __init__(self, icon: pygame.Surface, size=44, callback=None, enabled=True):
+        """
+        a small round button showing an icon
+            :param icon: the icon to be shown
+            :param size: size of the icon
+            :param callback: callback function, accepting 1 positional argument "button", any of its return will be
+                discarded
+            icon must be handled by icon_coloring
+        """
+        super().__init__(callback=callback)
         self.icon = icon
         self.size = size
         self.rect = pygame.Rect(0, 0, size, size)
         self.pressed = False
-
-    def set_icon(self, icon):
-        self.icon = icon
-
-    def set_rect(self, rect):
-        self.rect = pygame.Rect(rect)
-
-    def _hovered(self):
-        return self.rect.collidepoint(pygame.mouse.get_pos())
-
-    def handle_event(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
-            if self.rect.collidepoint(event.pos):
-                self.pressed = True
-        elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-            clicked = self.pressed and self.rect.collidepoint(event.pos)
-            self.pressed = False
-            return clicked
-        return False
+        self.enabled = enabled
 
     def draw(self, surface):
         if self.pressed:
@@ -166,10 +185,69 @@ class IconButton:
         icon = pygame.transform.smoothscale(self.icon, (icon_size, icon_size))
         surface.blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
 
-class OptionSelector:
-    #A labeled [<] current option [>] stepper laid out in one row.
 
-    def __init__(self, label, options, index=0):
+class IconToggleButton(IconButton):
+    _group_dict = {}
+
+    def __init__(self, icon: pygame.Surface, icon_pressed=None, group=None, size=64, callback=None, enabled=True,
+                 allow_all_release=True):
+        super().__init__(icon, size, callback, enabled)
+        self.icon_pressed = icon_pressed
+        if group is not None:
+            if group in self._group_dict:
+                self._group_dict[group].append(self)
+            else:
+                self._group_dict[group] = [self]
+            self.group = group
+        else:
+            self.group = f"btn_{len(self._group_dict)}"
+            self._group_dict[self.group] = [self]
+        self.allow_all_release = allow_all_release
+
+    def handle_event(self, event):
+        if not self.enabled:
+            return False
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.rect.collidepoint(event.pos):
+                new_state = not self.pressed
+                if new_state is False:
+                    if self.allow_all_release:
+                        self.pressed = False
+                        if self.callback is not None:
+                            self.callback(self)
+                    else:
+                        return False
+                else:
+                    for btn in self._group_dict[self.group]:
+                        btn.pressed = False
+                    self.pressed = True
+                if self.callback is not None:
+                    self.callback(self)
+                    return True
+        return False
+
+    def draw(self, surface):
+        if self.pressed and self.icon_pressed is None:
+            alpha = 175
+        elif self._hovered():
+            alpha = 255
+        else:
+            alpha = 220
+        # circle = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        # pygame.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
+        # surface.blit(circle, self.rect)
+        icon_size = int(self.size * 0.56)
+        if self.pressed and self.icon_pressed is not None:
+            icon = pygame.transform.smoothscale(self.icon_pressed, (icon_size, icon_size))
+        else:
+            icon = pygame.transform.smoothscale(self.icon, (icon_size, icon_size))
+        surface.blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
+
+
+class OptionSelector:
+    # A labeled [<] current option [>] stepper laid out in one row.
+
+    def __init__(self, label, options: list[str], index=0, callback=None):
         self.label = label
         self.options = options
         self.index = index
@@ -178,6 +256,7 @@ class OptionSelector:
         self._left_rect = pygame.Rect(0, 0, 10, 10)
         self._right_rect = pygame.Rect(0, 0, 10, 10)
         self._pressed = None
+        self.callback = callback
 
     @property
     def value(self):
@@ -202,9 +281,13 @@ class OptionSelector:
             self._pressed = None
             if hit == "left" and self._left_rect.collidepoint(event.pos):
                 self._step(-1)
+                if self.callback is not None:
+                    self.callback(self)
                 return True
             if hit == "right" and self._right_rect.collidepoint(event.pos):
                 self._step(1)
+                if self.callback is not None:
+                    self.callback(self)
                 return True
         return False
 
@@ -213,8 +296,8 @@ class OptionSelector:
 
     def draw(self, surface):
         # label
-        font = make_font(int(self.rect.height * 0.46), bold=True)
-        text = font.render(self.label, True, TEAL)
+        font = make_font(int(self.rect.height * 0.46))
+        text = font.render(self.label, True, main_color)
         surface.blit(text, (self.rect.x, self.rect.centery - text.get_height() // 2))
 
         # pill
@@ -224,15 +307,15 @@ class OptionSelector:
         surface.blit(pill, self._pill_rect)
 
         # current option
-        font = make_font(int(self.rect.height * 0.40), bold=True)
-        text = font.render(self.options[self.index].upper(), True, TEAL)
+        font = make_font(int(self.rect.height * 0.40))
+        text = font.render(self.options[self.index].upper(), True, main_color)
         surface.blit(text, (self._pill_rect.centerx - text.get_width() // 2,
                             self._pill_rect.centery - text.get_height() // 2))
 
         # arrows
         for side, rect in (("left", self._left_rect), ("right", self._right_rect)):
             hovered = rect.collidepoint(pygame.mouse.get_pos())
-            color = TEAL_DARK if self._pressed == side or hovered else TEAL
+            color = palette[5] if self._pressed == side or hovered else palette[4]
             cx, cy = rect.center
             w, hh = self.rect.height * 0.10, self.rect.height * 0.16
             if side == "right":
@@ -241,13 +324,20 @@ class OptionSelector:
                 points = ((cx + w, cy - hh), (cx - w, cy), (cx + w, cy + hh))
             pygame.draw.polygon(surface, color, points)
 
+
 class WelcomeScreen:
-    #The main menu
+    # The main menu
 
-    DECO_COLS = 12
-    DECO_ROWS = 7
+    DECO_COLS = 40
+    DECO_ROWS = 30
 
-    def __init__(self, size):
+    def __init__(self,
+                 size,
+                 sound_switch_cb=None,
+                 single_player_cb=None,
+                 double_player_cb=None,
+                 size_set_cb=None,
+                 diff_set_cb=None):
         self.size = size
         self.sound_on = True
 
@@ -257,13 +347,15 @@ class WelcomeScreen:
         self._deco_inst = self._deco.draw_instructions()
         self._deco_surf = None
 
-        self.sound_btn = IconButton(self._sound_icon(), size=46)
-        self.single_btn = Button("SINGLE PLAYER", icon=icons_dict["play"], style="solid")
-        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", enabled=False)
+        self.sound_btn = IconToggleButton(icon_coloring(icons_dict["sound_on"], main_color),
+                                          icon_coloring(icons_dict["sound_off"], main_color),
+                                          size=46, callback=sound_switch_cb)
+        self.single_btn = Button("SINGLE PLAYER", icon=icons_dict["play"], style="solid", callback=single_player_cb)
+        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", enabled=False, callback=double_player_cb)
 
         # maze option selectors; option keys follow the maze preset dictionaries
-        self.size_selector = OptionSelector("SIZE", list(SIZE_PRESETS), index=1)
-        self.diff_selector = OptionSelector("DIFFICULTY", list(DIFFICULTY_PRESETS), index=1)
+        self.size_selector = OptionSelector("SIZE", list(SIZE_PRESETS), index=1, callback=size_set_cb)
+        self.diff_selector = OptionSelector("DIFFICULTY", list(DIFFICULTY_PRESETS), index=1, callback=diff_set_cb)
         self._card_rect = pygame.Rect(0, 0, 10, 10)
 
         self.bg = None
@@ -274,36 +366,30 @@ class WelcomeScreen:
         self.hint_pos = (0, 0)
         self.resize(size)
 
-    # -- chosen options --
-    @property
-    def size_preset(self):
-        return self.size_selector.value
-
     @property
     def difficulty(self):
         return self.diff_selector.value
 
-    # -- sound state --
-    def _sound_icon(self):
-        return icon_coloring(icons_dict["sound_on" if self.sound_on else "sound_off"], TEAL)
-
-    def set_sound(self, on):
-        if on == self.sound_on:
-            return
-        self.sound_on = on
-        self.sound_btn.set_icon(self._sound_icon())
     def resize(self, size):
         self.size = size
         w, h = size
-        self.bg = vertical_gradient(size, BACKGROUND_TOP, BACKGROUND_BOTTOM)
+        self.bg = vertical_gradient(
+            size,
+            adjust_color(palette[-3],
+                         hue_offset=10,
+                         saturation_factor=0.8),
+            adjust_color(palette[-3],
+                         hue_offset=-10,
+                         saturation_factor=0.8,
+                         brightness_factor=0.95))
         self._render_deco()
 
         # title: up to 86% of the width and 13% of the height, keeps aspect
-        aspect = TITLE_SURF.get_width() / TITLE_SURF.get_height()
+        aspect = title_surf.get_width() / title_surf.get_height()
         title_h = min(int(h * 0.13), int(w * 0.86 / aspect))
         title_w = int(title_h * aspect)
-        self.title_img = pygame.transform.smoothscale(TITLE_SURF.convert_alpha(), (title_w, title_h))
-        shadow = TITLE_SURF.copy().convert_alpha()
+        self.title_img = pygame.transform.smoothscale(title_surf.convert_alpha(), (title_w, title_h))
+        shadow = title_surf.copy().convert_alpha()
         shadow.fill((45, 85, 75, 255), special_flags=pygame.BLEND_RGBA_MULT)
         self.title_shadow = pygame.transform.smoothscale(shadow, (title_w, title_h))
         self.title_shadow.set_alpha(60)
@@ -335,18 +421,18 @@ class WelcomeScreen:
         self.sound_btn.set_rect((w - s - 22, 22, s, s))
 
         self.hint_img = make_font(max(14, int(h * 0.022))).render(
-            "MADE BY ZCR AND ZYW", True, HINT_TEXT)
+            "MADE BY ZCR & ZYW", True, palette[-1])
         self.hint_img.set_alpha(255)
         self.hint_pos = (cx - self.hint_img.get_width() // 2, h - self.hint_img.get_height() - 26)
 
     def _render_deco(self):
-        #Render the faint decorative maze, centered behind the menu.
+        # Render the faint decorative maze, centered behind the menu.
         w, h = self.size
         cols, rows = self.DECO_COLS, self.DECO_ROWS
-        cw = min(w / (cols * 1.5), h / (rows * 1.5))
+        cw = max(w / cols, h / rows)
         edge_w = max(4, int(cw // 8))
         mw, mh = cw * cols, cw * rows
-        ox, oy = (w - mw) / 2, (h - mh) / 2 + h * 0.08
+        ox, oy = (w - mw) / 2, (h - mh) / 2 + h * 0.01
         self._deco_surf = pygame.Surface((w, h), pygame.SRCALPHA)
         line_color = (255, 255, 255, 46)
         inst = self._deco_inst
@@ -361,19 +447,17 @@ class WelcomeScreen:
                     pygame.draw.line(self._deco_surf, line_color, (x, y), (x, y + int(cw)), edge_w)
                 if row % 2 == 0 and col % 2 == 0 and edge_w > 2:
                     pygame.draw.circle(self._deco_surf, line_color, (x, y), edge_w // 2)
+
     def handle_events(self, events):
-        #Process one frame's events, return an action string or None.
+        # Process one frame's events, return an action string or None.
         for event in events:
-            if self.sound_btn.handle_event(event):
-                return "toggle_sound"
-            if self.single_btn.handle_event(event):
-                return "start_single"
-            self.double_btn.handle_event(event)
-            self.size_selector.handle_event(event)
-            self.diff_selector.handle_event(event)
-            if event.type == pygame.KEYDOWN and event.key in (pygame.K_RETURN, pygame.K_KP_ENTER):
-                return "start_single"
-        return None
+            if (self.sound_btn.handle_event(event)
+                    or self.single_btn.handle_event(event)
+                    or self.double_btn.handle_event(event)
+                    or self.size_selector.handle_event(event)
+                    or self.diff_selector.handle_event(event)):
+                events.remove(event)
+        return events
 
     def draw(self, surface):
         surface.blit(self.bg, (0, 0))
@@ -392,16 +476,22 @@ class WelcomeScreen:
         self.single_btn.draw(surface)
         self.sound_btn.draw(surface)
         surface.blit(self.hint_img, self.hint_pos)
-class HUD:
-    #In-game heads-up display: score pill, pause / sound buttons, pause panel.
 
-    def __init__(self, size):
+
+class HUD:
+    # In-game heads-up display: score pill, pause / sound buttons, pause panel.
+
+    def __init__(self,
+                 size,
+                 sound_switch_cb=None):
         self.size = size
         self.sound_on = True
         self.paused = False
 
-        self.pause_btn = IconButton(icon_coloring(icons_dict["pause"], TEAL), size=42)
-        self.sound_btn = IconButton(self._sound_icon(), size=42)
+        self.pause_btn = IconButton(icon_coloring(icons_dict["pause"], main_color), size=42)
+        self.sound_btn = IconToggleButton(icon_coloring(icons_dict["sound_on"], main_color),
+                                          icon_coloring(icons_dict["sound_off"], main_color),
+                                          size=46, callback=sound_switch_cb)
 
         self.resume_btn = Button("RESUME", icon=icons_dict["play"], style="solid")
         self.menu_btn = Button("MENU", style="ghost", on_light=True)
@@ -411,16 +501,6 @@ class HUD:
         self._panel_title = None
         self._panel_hint = None
         self.resize(size)
-
-    # -- state --
-    def _sound_icon(self):
-        return icon_coloring(icons_dict["sound_on" if self.sound_on else "sound_off"], TEAL)
-
-    def set_sound(self, on):
-        if on == self.sound_on:
-            return
-        self.sound_on = on
-        self.sound_btn.set_icon(self._sound_icon())
 
     def set_paused(self, paused):
         self.paused = paused
@@ -442,8 +522,9 @@ class HUD:
         bx = self._panel_rect.centerx - btn_w // 2
         self.resume_btn.set_rect((bx, self._panel_rect.y + 100, btn_w, btn_h))
         self.menu_btn.set_rect((bx, self._panel_rect.y + 100 + btn_h + 18, btn_w, btn_h))
-        self._panel_title = make_font(30, bold=True).render("PAUSED", True, TEAL)
+        self._panel_title = make_font(30).render("PAUSED", True, main_color)
         self._panel_hint = make_font(16).render("PRESS ESC TO RESUME", True, HINT_TEXT)
+
     # -- events / drawing --
     def handle_events(self, events):
         for event in events:
@@ -461,7 +542,7 @@ class HUD:
 
     def draw(self, surface, score=0):
         # score pill (top-left)
-        text = make_font(20, bold=True).render(f"x {score}", True, TEAL)
+        text = make_font(20).render(f"x {score}", True, main_color)
         pad = 9
         pill_w = pad * 2 + self._score_icon.get_width() + 6 + text.get_width()
         pill_h = 40
@@ -495,3 +576,43 @@ class HUD:
                      (r.centerx - self._panel_hint.get_width() // 2, r.y + 72))
         self.resume_btn.draw(surface)
         self.menu_btn.draw(surface)
+
+
+if __name__ == '__main__':
+
+    def test_callback(widget):
+        print(widget)
+        print()
+
+
+    def test(test_idx=1):
+        pygame.init()
+        screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
+        set_theme((200, 120, 0))
+        if test_idx == 1:
+            sc = WelcomeScreen((800, 600),
+                               sound_switch_cb=test_callback,
+                               single_player_cb=test_callback,
+                               double_player_cb=test_callback,
+                               size_set_cb=test_callback,
+                               diff_set_cb=test_callback
+                               )
+        else:
+            sc = HUD((800, 600))
+        while True:
+            event_ls = pygame.event.get()
+            event_ls = sc.handle_events(event_ls)
+            for event in event_ls:
+                if event.type == pygame.QUIT:
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.WINDOWSIZECHANGED:
+                    sc.resize(pygame.display.get_window_size())
+
+            screen.fill("gray")
+            sc.draw(screen)
+
+            pygame.display.flip()
+
+
+    test(1)

@@ -7,7 +7,7 @@ import pygame
 from utils import resource_path
 from vectors import Vector, vec_like, DIR_ENUMS
 
-__all__ = ["Animation", "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title"]
+__all__ = ["Animation", "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title", "main_font_path"]
 
 resource_root = resource_path("Resources\\")
 
@@ -108,6 +108,9 @@ for p in icon_paths:
 # load the app logo and welcome screen title
 app_logo = pygame.image.load(resource_root + "Images\\icons\\_game_icon.png")
 title = pygame.image.load(resource_root + "Images\\icons\\title.png")
+
+# load the main font
+main_font_path = resource_root + "Fonts\\main.ttf"
 
 if __name__ == '__main__':
     # A simple test for resource loading module

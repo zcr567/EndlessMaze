@@ -3,11 +3,15 @@ Simple property adjustments & animated effects for pygame surfaces.
 
 The skeleton is written by ZCR, and implementations are written by ZYY.
 """
+import random
 import sys
+from weakref import ref as weakref
 
 import pygame
 
 __all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor"]
+
+_all_effects: list[weakref] = []
 
 
 def trim(value, min_val=0, max_val=1):
@@ -125,44 +129,102 @@ class DoubleQuad(Interpolation):
 
 
 class Effect:
-    def __init__(self, surface: pygame.Surface, *args, interpolation=Linear, **kwargs):
+    def __init__(self, surface: pygame.Surface, *args, duration=30, interpolation=Linear, **kwargs):
         self.surface = surface
+        self.duration = duration
         self.interpolation = interpolation
         self._cur_interpolation = None
+        _all_effects.append(weakref(self))
 
-    def animate_now(self, step: int, initial_phase: int | float = 0, direction: int = 1):
-        self._cur_interpolation = self.interpolation(step, initial_phase, direction)
+    @property
+    def animating(self):
+        return self._cur_interpolation is not None
+
+    @property
+    def phase(self):
+        if self._cur_interpolation is None:
+            return 0
+        else:
+            return self._cur_interpolation.get()
+
+    def animate_now(self, step: int | None = None, initial_phase: int | float = 0, direction: int = 1):
+        self._cur_interpolation = self.interpolation(self.duration if step is None else step, initial_phase, direction)
 
     def update(self):
         if self._cur_interpolation is not None:
             self._cur_interpolation.update()
+            if self._cur_interpolation.get() == 1:
+                self._cur_interpolation = None
         else:
             return
 
 
-# 可以把动画持续时间也放到形参
 class ChangeColor(Effect):
-    def __init__(self, surface: pygame.Surface, color, interpolation=Linear):
-        super(ChangeColor, self).__init__(surface, interpolation=interpolation)
-        self.color = color
+    def __init__(self, surface: pygame.Surface, end_color, start_color=None, duration=30, interpolation=Linear):
+        """Gradient animation effect. Solid color surfaces only."""
+        # 调用父类初始化
+        super().__init__(surface, interpolation=interpolation)
+        if start_color is None:
+            self.start_color = self.surface.get_at((0, 0))
+        else:
+            self.start_color = tuple(start_color)
+        self.end_color = tuple(end_color)
+        self.duration = duration
+        self.interpolation = interpolation
 
     def update(self):
-        raise NotImplementedError
-        # TODO: implement the function
+        super().update()
+        if self._cur_interpolation is None:
+            return
+        t = self._cur_interpolation.get()
+        current_color = (
+            int(self.start_color[0] * (1 - t) + self.end_color[0] * t),
+            int(self.start_color[1] * (1 - t) + self.end_color[1] * t),
+            int(self.start_color[2] * (1 - t) + self.end_color[2] * t)
+        )
+        self.surface.fill(current_color)
+
+
+def update_effects():
+    for effect_ref in _all_effects:
+        try:
+            effect_ref().update()
+        except AttributeError:
+            _all_effects.remove(effect_ref)
 
 
 if __name__ == '__main__':
     # 测试用的窗口，可以在里面塞各种想要测试的代码
     pygame.init()
-    screen = pygame.display.set_mode((800, 600))
-    # 初始化
+    screen = pygame.display.set_mode((1920, 1080), pygame.RESIZABLE | pygame.NOFRAME)
+    clock = pygame.time.Clock()
 
-    # 初始化
+    color_anim = ChangeColor(screen, end_color=(255, 128, 0), duration=30)
+
+    loopvar = 0
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 sys.exit()
-        # 每循环调用的代码
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
 
         # 每循环调用的代码
+        update_effects()
+
+        loopvar = (loopvar + 1) % 17
+        if loopvar == 0:
+            color_anim = ChangeColor(
+                screen,
+                end_color=(random.randint(0, 255),
+                           random.randint(0, 255),
+                           random.randint(0, 255)),
+                duration=30)
+            color_anim.animate_now()
+
+        # 把渐变绘制到屏幕上
+        pygame.display.flip()
+        clock.tick(60)
