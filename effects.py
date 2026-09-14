@@ -37,6 +37,10 @@ class Interpolation:
         self._direction = 1 if direction >= 0 else -1
         self.step = step
 
+    @property
+    def direction(self):
+        return self._direction
+
     def clear(self):
         self._phase = 0
 
