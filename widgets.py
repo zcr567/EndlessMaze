@@ -1,14 +1,15 @@
 """
-A simple widget module for pygame written by zyw.
+A simple widget module for pygame first version written by zyw and refactored by zcr .
 """
 
 import sys
-
+import math
 import pygame
 
 from Resources import icons_dict, main_font_path, title as title_surf
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
 from utils import adjust_color
+from effects import DoubleQuad
 
 # colors to be used
 DISABLED_TEXT = (132, 152, 146)
@@ -331,6 +332,10 @@ class WelcomeScreen:
     DECO_COLS = 40
     DECO_ROWS = 30
 
+    # title float animation hyperparameters
+    TITLE_FLOAT_STEP = 120  # frames per half cycle
+    TITLE_FLOAT_AMP = 6  # vertical float amplitude in pixels
+
     def __init__(self,
                  size,
                  sound_switch_cb=None,
@@ -362,6 +367,7 @@ class WelcomeScreen:
         self.title_img = None
         self.title_pos = (0, 0)
         self.title_shadow = None
+        self.title_intp = DoubleQuad(step=self.TITLE_FLOAT_STEP)
         self.hint_img = None
         self.hint_pos = (0, 0)
         self.resize(size)
@@ -369,6 +375,10 @@ class WelcomeScreen:
     @property
     def difficulty(self):
         return self.diff_selector.value
+
+    def set_sound(self, sound_on: bool):
+        self.sound_on = sound_on
+        self.sound_btn.pressed = not sound_on
 
     def resize(self, size):
         self.size = size
@@ -459,11 +469,23 @@ class WelcomeScreen:
                 events.remove(event)
         return events
 
+    def update(self):
+        #Advance the title float animation by one frame.
+        self.title_intp.update()
+        p = self.title_intp.get()
+        if self.title_intp.direction == 1 and p >= 1.0:
+            self.title_intp.switch()
+        elif self.title_intp.direction == -1 and p <= 0.0:
+            self.title_intp.switch()
+
     def draw(self, surface):
         surface.blit(self.bg, (0, 0))
         surface.blit(self._deco_surf, (0, 0))
-        surface.blit(self.title_shadow, (self.title_pos[0] + 3, self.title_pos[1] + 5))
-        surface.blit(self.title_img, self.title_pos)
+        # title float: a gentle vertical bobbing driven by title_intp
+        amp = math.sin(self.title_intp.get() * math.pi)  # 0 -> 1 -> 0 over each half cycle
+        float_y = int(round(amp * self.TITLE_FLOAT_AMP))
+        surface.blit(self.title_shadow, (self.title_pos[0] + 3, self.title_pos[1] + 5 + float_y))
+        surface.blit(self.title_img, (self.title_pos[0], self.title_pos[1] + float_y))
 
         # options card
         card = pygame.Surface(self._card_rect.size, pygame.SRCALPHA)
@@ -505,6 +527,9 @@ class HUD:
     def set_paused(self, paused):
         self.paused = paused
 
+    def set_sound(self, sound_on: bool):
+        self.sound_on = sound_on
+        self.sound_btn.pressed = not sound_on
     # -- layout --
     def resize(self, size):
         self.size = size
