@@ -8,7 +8,7 @@ from weakref import ref as weakref
 
 import pygame
 
-__all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor"]
+__all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor", "Shadow", "Fade", "RoundMaskFade"]
 
 _all_effects: list[weakref] = []
 

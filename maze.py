@@ -24,17 +24,14 @@ DIFFICULTY_PRESETS = {
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {
-    "small":  (4, 6),
-    "medium": (6, 8),
-    "large":  (8, 10),
+    "small":  (5, 10),
+    "medium": (10, 20),
+    "large":  (20, 40),
 }
-
-# noinspection PyUnusedLocal
-def _(*args):
-    pass
 
 
 def count(start, stop):
+    """an enhanced version of range(), supports stop smaller than start"""
     if start > stop:
         return range(start, stop, -1)
     else:
@@ -43,7 +40,12 @@ def count(start, stop):
 
 class Maze:
 
-    def __init__(self, size: vec_like = (10, 10), start: vec_like = None, end: vec_like = None, filepath=None):
+    def __init__(self,
+                 size: vec_like = (10, 10),
+                 start: vec_like = None,
+                 end: vec_like = None,
+                 filepath=None,
+                 diff_preset=None):
 
         self._size = size
         self._start = start
@@ -55,6 +57,8 @@ class Maze:
         self._right_path = []
 
         # hyperparameters for branching
+        self.diff_preset = diff_preset
+        # TODO: find a set of parameters below, to implement difficulty preset function
         self.PATH_LENGTH_UNIFORMITY = 2  # larger than 1, controls the length uniformity of the right path's segments
         self.BRANCH_THR = math.sqrt(self._width * self._height) // 2  # controls branch nesting depth
         self.BRANCH_EXTEND_PROB = 1 - 1 / (self._width + self._height)  # controls average branch length

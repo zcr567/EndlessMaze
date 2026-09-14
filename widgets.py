@@ -2,14 +2,21 @@
 A simple widget module for pygame first version written by zyw and refactored by zcr .
 """
 
-import sys
 import math
-import pygame
+import random
+import sys
+from enum import IntEnum, IntFlag
 
-from Resources import icons_dict, main_font_path, title as title_surf
+import pygame
+import pygame as pg
+from pygame.draw import line
+
+from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
+from effects import DoubleQuad, ReversedQuad, Shadow
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
 from utils import adjust_color
-from effects import DoubleQuad
+# noinspection PyPep8Naming
+from vectors import Vector as V, Cell, DIR_VECS
 
 # colors to be used
 DISABLED_TEXT = (132, 152, 146)
@@ -74,7 +81,7 @@ class ButtonBase:
             if self.rect.collidepoint(event.pos):
                 self.pressed = True
                 if self.callback is not None:
-                    self.callback(self)
+                    self.callback()
                     return True
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             self.pressed = False
@@ -83,14 +90,14 @@ class ButtonBase:
 
 class Button(ButtonBase):
 
-    def __init__(self, text="", icon=None, style="ghost", enabled=True, on_light=False, callback=None):
+    def __init__(self, text="", icon=None, style="ghost", on_light=False, callback=None):
         """
         A rounded button that can hold text or icon.
             :param style: Literal["solid"|"ghost"]
                 "solid" (filled teal, white content)
                 "ghost" (frosted white, teal content)
             :param on_light: in case of ghost buttons being placed on a white background
-            :param callback: callback function, accepting 1 positional argument "button", any of its return will be
+            :param callback: callback function, accepting no arguments any of its return will be
                 discarded
             icon must be handled by icon_coloring
         """
@@ -179,6 +186,8 @@ class IconButton(ButtonBase):
             alpha = 255
         else:
             alpha = 220
+
+        # noinspection DuplicatedCode
         circle = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
         pygame.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
         surface.blit(circle, self.rect)
@@ -215,16 +224,17 @@ class IconToggleButton(IconButton):
                     if self.allow_all_release:
                         self.pressed = False
                         if self.callback is not None:
-                            self.callback(self)
+                            self.callback()
+                            return True
                     else:
                         return False
                 else:
                     for btn in self._group_dict[self.group]:
                         btn.pressed = False
                     self.pressed = True
-                if self.callback is not None:
-                    self.callback(self)
-                    return True
+                    if self.callback is not None:
+                        self.callback()
+                        return True
         return False
 
     def draw(self, surface):
@@ -234,9 +244,11 @@ class IconToggleButton(IconButton):
             alpha = 255
         else:
             alpha = 220
-        # circle = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
-        # pygame.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
-        # surface.blit(circle, self.rect)
+
+        # noinspection DuplicatedCode
+        circle = pygame.Surface((self.size, self.size), pygame.SRCALPHA)
+        pygame.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
+        surface.blit(circle, self.rect)
         icon_size = int(self.size * 0.56)
         if self.pressed and self.icon_pressed is not None:
             icon = pygame.transform.smoothscale(self.icon_pressed, (icon_size, icon_size))
@@ -283,12 +295,12 @@ class OptionSelector:
             if hit == "left" and self._left_rect.collidepoint(event.pos):
                 self._step(-1)
                 if self.callback is not None:
-                    self.callback(self)
+                    self.callback(self.value)
                 return True
             if hit == "right" and self._right_rect.collidepoint(event.pos):
                 self._step(1)
                 if self.callback is not None:
-                    self.callback(self)
+                    self.callback(self.value)
                 return True
         return False
 
@@ -326,7 +338,15 @@ class OptionSelector:
             pygame.draw.polygon(surface, color, points)
 
 
-class WelcomeScreen:
+class GameScreen:
+    def resize(self, size: tuple[int, int] | V) -> None: ...
+
+    def handle_events(self, events: list[pygame.event.Event]) -> list[pygame.event.Event]: ...
+
+    def draw(self, surface: pygame.Surface) -> None: ...
+
+
+class WelcomeScreen(GameScreen):
     # The main menu
 
     DECO_COLS = 40
@@ -344,7 +364,6 @@ class WelcomeScreen:
                  size_set_cb=None,
                  diff_set_cb=None):
         self.size = size
-        self.sound_on = True
 
         # decorative faint maze behind the menu
         self._deco = Maze((self.DECO_COLS, self.DECO_ROWS),
@@ -356,7 +375,7 @@ class WelcomeScreen:
                                           icon_coloring(icons_dict["sound_off"], main_color),
                                           size=46, callback=sound_switch_cb)
         self.single_btn = Button("SINGLE PLAYER", icon=icons_dict["play"], style="solid", callback=single_player_cb)
-        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", enabled=False, callback=double_player_cb)
+        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", callback=double_player_cb)
 
         # maze option selectors; option keys follow the maze preset dictionaries
         self.size_selector = OptionSelector("SIZE", list(SIZE_PRESETS), index=1, callback=size_set_cb)
@@ -376,9 +395,37 @@ class WelcomeScreen:
     def difficulty(self):
         return self.diff_selector.value
 
-    def set_sound(self, sound_on: bool):
-        self.sound_on = sound_on
-        self.sound_btn.pressed = not sound_on
+    def _render_deco(self):
+        # Render the faint decorative maze, centered behind the menu.
+        w, h = self.size
+        cols, rows = self.DECO_COLS, self.DECO_ROWS
+        cw = max(w / cols, h / rows)
+        edge_w = max(4, int(cw // 8))
+        mw, mh = cw * cols, cw * rows
+        ox, oy = (w - mw) / 2, (h - mh) / 2 + h * 0.01
+        self._deco_surf = pygame.Surface((w, h), pygame.SRCALPHA)
+        line_color = (255, 255, 255, 46)
+        inst = self._deco_inst
+        for row in range(rows * 2 + 1):
+            for col in range(cols * 2 + 1):
+                op = inst[row][col]
+                x = int(ox + cw * (col // 2))
+                y = int(oy + cw * (row // 2))
+                if row % 2 == 0 and col % 2 == 1 and op == 0:
+                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x + int(cw), y), edge_w)
+                elif row % 2 == 1 and col % 2 == 0 and op == 0:
+                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x, y + int(cw)), edge_w)
+                if row % 2 == 0 and col % 2 == 0 and edge_w > 2:
+                    pygame.draw.circle(self._deco_surf, line_color, (x, y), edge_w // 2)
+
+    def _update_title(self):
+        # Advance the title float animation by one frame.
+        self.title_intp.update()
+        p = self.title_intp.get()
+        if self.title_intp.direction == 1 and p >= 1.0:
+            self.title_intp.switch()
+        elif self.title_intp.direction == -1 and p <= 0.0:
+            self.title_intp.switch()
 
     def resize(self, size):
         self.size = size
@@ -435,29 +482,6 @@ class WelcomeScreen:
         self.hint_img.set_alpha(255)
         self.hint_pos = (cx - self.hint_img.get_width() // 2, h - self.hint_img.get_height() - 26)
 
-    def _render_deco(self):
-        # Render the faint decorative maze, centered behind the menu.
-        w, h = self.size
-        cols, rows = self.DECO_COLS, self.DECO_ROWS
-        cw = max(w / cols, h / rows)
-        edge_w = max(4, int(cw // 8))
-        mw, mh = cw * cols, cw * rows
-        ox, oy = (w - mw) / 2, (h - mh) / 2 + h * 0.01
-        self._deco_surf = pygame.Surface((w, h), pygame.SRCALPHA)
-        line_color = (255, 255, 255, 46)
-        inst = self._deco_inst
-        for row in range(rows * 2 + 1):
-            for col in range(cols * 2 + 1):
-                op = inst[row][col]
-                x = int(ox + cw * (col // 2))
-                y = int(oy + cw * (row // 2))
-                if row % 2 == 0 and col % 2 == 1 and op == 0:
-                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x + int(cw), y), edge_w)
-                elif row % 2 == 1 and col % 2 == 0 and op == 0:
-                    pygame.draw.line(self._deco_surf, line_color, (x, y), (x, y + int(cw)), edge_w)
-                if row % 2 == 0 and col % 2 == 0 and edge_w > 2:
-                    pygame.draw.circle(self._deco_surf, line_color, (x, y), edge_w // 2)
-
     def handle_events(self, events):
         # Process one frame's events, return an action string or None.
         for event in events:
@@ -469,16 +493,8 @@ class WelcomeScreen:
                 events.remove(event)
         return events
 
-    def update(self):
-        #Advance the title float animation by one frame.
-        self.title_intp.update()
-        p = self.title_intp.get()
-        if self.title_intp.direction == 1 and p >= 1.0:
-            self.title_intp.switch()
-        elif self.title_intp.direction == -1 and p <= 0.0:
-            self.title_intp.switch()
-
     def draw(self, surface):
+        self._update_title()
         surface.blit(self.bg, (0, 0))
         surface.blit(self._deco_surf, (0, 0))
         # title float: a gentle vertical bobbing driven by title_intp
@@ -500,12 +516,10 @@ class WelcomeScreen:
         surface.blit(self.hint_img, self.hint_pos)
 
 
-class HUD:
+class HUD(GameScreen):
     # In-game heads-up display: score pill, pause / sound buttons, pause panel.
 
-    def __init__(self,
-                 size,
-                 sound_switch_cb=None):
+    def __init__(self, size, sound_switch_cb=None):
         self.size = size
         self.sound_on = True
         self.paused = False
@@ -530,7 +544,7 @@ class HUD:
     def set_sound(self, sound_on: bool):
         self.sound_on = sound_on
         self.sound_btn.pressed = not sound_on
-    # -- layout --
+
     def resize(self, size):
         self.size = size
         w, h = size
@@ -550,7 +564,6 @@ class HUD:
         self._panel_title = make_font(30).render("PAUSED", True, main_color)
         self._panel_hint = make_font(16).render("PRESS ESC TO RESUME", True, HINT_TEXT)
 
-    # -- events / drawing --
     def handle_events(self, events):
         for event in events:
             if self.paused:
@@ -603,6 +616,255 @@ class HUD:
         self.menu_btn.draw(surface)
 
 
+class PlayerType(IntEnum):
+    SINGLE = 0
+    PREDATOR = 1
+    prey = 2
+
+
+class GameMode(IntEnum):
+    SINGLE = 0
+    DOUBLE = 1
+
+
+class DispState(IntFlag):
+    IDLE = 1
+    MOVING = 2
+    ROTATING = 4
+    DYING = 8
+
+
+class Player:
+    """Player class."""
+
+    def __init__(self, game, pos0=V(0, 0), heading=Cell.GO_UP, player_type=PlayerType.SINGLE):
+        # basic properties
+        self.game: MazeGame = game
+        self.maze: Maze = self.game.maze
+        self.player_type = player_type
+        self.pos = pos0
+        self.heading = heading
+
+        # game logic
+        self.eaten = 0
+        self.eat = 0
+
+        # display
+        if self.player_type == PlayerType.PREDATOR:
+            self.anim_dict: dict[Cell:Animation] = predator_anim_dict
+        else:
+            self.anim_dict: dict[Cell:Animation] = prey_anim_dict
+        self.cur_anim: Animation = self.anim_dict[self.heading]
+        self.cur_anim.set_position(self.pos_to_surf())
+        self.disp_state = DispState.IDLE
+
+        self.movement_intp = ReversedQuad(step=15)
+        self.pos_next = self.pos
+        self.movement_vec = V(0, 0)
+
+    def pos_to_surf(self, pos=None):
+        """return the current position in maze_surf coordinates"""
+        if pos is None:
+            return V(int(self.game.region[0] + self.game.cell_width * (self.pos[0] + 0.5) + 1),
+                     int(self.game.region[1] + self.game.cell_width * (self.pos[1] + 0.5)) + 1)
+        else:
+            return V(int(self.game.region[0] + self.game.cell_width * (pos[0] + 0.5) + 1),
+                     int(self.game.region[1] + self.game.cell_width * (pos[1] + 0.5)) + 1)
+
+    def _is_available(self, vec):
+        """return True if there is no obstacle between 'self.pos_next' and 'self.pos_next + vec'"""
+        return (self.maze.is_valid_coord(self.pos_next + vec)
+                and self.game.inst[2 * self.pos_next[1] + vec[1] + 1][2 * self.pos_next[0] + vec[0] + 1] == 2)
+
+    def move(self, direction: Cell):
+        # calculate the next position
+        if self.disp_state & DispState.MOVING:
+            return
+        vec = DIR_VECS[direction]
+        if direction != self.heading:
+            self.heading = direction
+            self.disp_state |= DispState.ROTATING
+        all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
+        if self._is_available(vec):
+            self.pos_next += vec
+        else:
+            return
+        while (self._is_available(vec)
+               and not self._is_available(all_headings[(all_headings.index(vec) + 1) % 4])
+               and not self._is_available(all_headings[(all_headings.index(vec) + 3) % 4])
+               and not self.pos_next == self.maze.end):
+            # the condition: there is one available cell in the front, and there is no branch at the current cell
+            # and the current cell is not the end of the maze
+            self.pos_next += vec
+
+        # initialize movement animation
+        self.movement_intp = ReversedQuad(step=5 * abs(sum(self.pos_next - self.pos)))
+        self.movement_vec = self.pos_to_surf(self.pos_next) - self.pos_to_surf(self.pos)
+        self.disp_state |= DispState.MOVING
+
+    def draw(self, surface):
+        if self.disp_state & DispState.MOVING:
+            if self.movement_intp.get() != 1:
+                self.cur_anim.set_position(self.pos_to_surf() + self.movement_vec * self.movement_intp.get())
+                self.movement_intp.update()
+            else:
+                self.disp_state ^= DispState.MOVING
+                self.pos = self.pos_next
+                self.movement_intp.set(0)
+                self.movement_vec = V(0, 0)
+        if self.disp_state & DispState.ROTATING:
+            fid = self.cur_anim.get_frame_id()
+            pos = self.cur_anim.get_position()
+            self.cur_anim = self.anim_dict[self.heading]
+            self.cur_anim.set_frame_id(fid)
+            self.cur_anim.set_position(pos)
+            self.disp_state ^= DispState.ROTATING
+        if self.disp_state == DispState.IDLE:  # must be "==" !
+            self.cur_anim.set_position(self.pos_to_surf())
+
+        self.cur_anim.step()
+        self.cur_anim.draw(surface, size=[self.game.cell_width * 1.2, self.game.cell_width * 1.2])
+
+
+class MazeGame(GameScreen):
+    MAZE_EDGE_COLOR = (255, 255, 255)
+    BG_COLORS = ((204, 128, 204), (108, 150, 200), (200, 175, 64), (100, 204, 100))
+    _instance = None
+    MAX_MAZE_WIDTH = 10
+    MAX_MAZE_HEIGHT = 10
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
+    def __init__(self, gamemode=GameMode.SINGLE,
+                 size_preset="medium", difficulty="normal"):
+        # common
+        self.gamemode = gamemode
+        self.size_preset = size_preset
+        self.difficulty = difficulty
+        side_min, side_max = SIZE_PRESETS[size_preset]
+        self.field_width = random.randint(side_min, side_max)
+        self.field_height = random.randint(side_min, side_max)
+        diff_kwargs = DIFFICULTY_PRESETS[difficulty] or {}
+        self.maze = Maze((self.field_width, self.field_height), **diff_kwargs)
+        self.inst = self.maze.draw_instructions()
+
+        # display related
+        self.maze_surf = pygame.Surface(pygame.display.get_window_size(), pygame.SRCALPHA)
+        self.bg_color = random.choice(self.BG_COLORS)
+        self.region = V(0, 0)
+        self.cell_width = 0
+        self.maze_edge_width = 0
+        self.resize(pygame.display.get_window_size())
+
+        # game logic related
+        self.players = []
+        if gamemode == GameMode.SINGLE:
+            self.players.append(Player(self, pos0=self.maze.start))
+        elif gamemode == GameMode.DOUBLE:
+            pass
+
+        game_start = pygame.event.Event(pygame.USEREVENT + 1,
+                                        {'gamemode': gamemode,
+                                         'size': (self.field_width, self.field_height),
+                                         'difficulty': difficulty})
+        pygame.event.post(game_start)
+
+    def draw_maze(self):
+        """draw the maze on "self.maze_surf" property."""
+        self.maze_surf.fill((0, 0, 0, 0))
+        # self.inst = self.maze.draw_instructions()
+        for row in range(self.field_height * 2 + 1):
+            for col in range(self.field_width * 2 + 1):
+                op = self.inst[row][col]
+                if row % 2 == 0 and col % 2 == 1 and op == 0:
+                    line(self.maze_surf,
+                         self.MAZE_EDGE_COLOR,
+                         (int(self.region[0] + self.cell_width * (col // 2)),
+                          int(self.region[1] + self.cell_width * (row // 2))),
+                         (int(self.region[0] + self.cell_width * (col // 2) + self.cell_width),
+                          int(self.region[1] + self.cell_width * (row // 2))),
+                         width=self.maze_edge_width)
+                elif row % 2 == 1 and col % 2 == 0 and op == 0:
+                    line(self.maze_surf,
+                         self.MAZE_EDGE_COLOR,
+                         (int(self.region[0] + self.cell_width * (col // 2)),
+                          int(self.region[1] + self.cell_width * (row // 2))),
+                         (int(self.region[0] + self.cell_width * (col // 2)),
+                          int(self.region[1] + self.cell_width * (row // 2) + self.cell_width)),
+                         width=self.maze_edge_width)
+
+                # add round corners
+                if self.maze_edge_width > 2:
+                    # center coordinate plus (1, 1) to align the circles with the lines
+                    # (ways line() and circle() calculate coordinate are different)
+                    pygame.draw.circle(self.maze_surf,
+                                       self.MAZE_EDGE_COLOR,
+                                       (int(self.region[0] + self.cell_width * (col // 2) + 1),
+                                        int(self.region[1] + self.cell_width * (row // 2)) + 1),
+                                       int(self.maze_edge_width / 2))
+
+    def game_logic(self):
+        if self.gamemode == GameMode.SINGLE:
+            if self.players[0].pos == self.maze.end:
+                game_end = pygame.event.Event(pygame.USEREVENT + 2,
+                                              {'gamemode': self.gamemode,
+                                               'size': (self.field_width, self.field_height),
+                                               'difficulty': self.difficulty})
+                pygame.event.post(game_end)
+
+    def resize(self, size):
+        """update the screen size variables, call every time the screen size changes"""
+        self.maze_surf = pygame.Surface(size, pygame.SRCALPHA)
+        self.cell_width = min(size[0] / (self.field_width * 1.2), size[1] / (self.field_height * 1.2))
+        self.maze_edge_width = max(int(self.cell_width // 6), 1)
+        maze_size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
+        self.region = ((size[0] - maze_size[0]) / 2, (size[1] - maze_size[1]) / 2)
+        self.draw_maze()
+        Shadow(self.maze_surf, (self.maze_edge_width // 2, self.maze_edge_width // 2))
+
+    def handle_events(self, events):
+        for event in events:
+            if event.type == pg.KEYDOWN:
+                if event.key == pg.K_RIGHT:
+                    self.players[0].move(Cell.GO_RIGHT)
+                    events.remove(event)
+                elif event.key == pg.K_LEFT:
+                    self.players[0].move(Cell.GO_LEFT)
+                    events.remove(event)
+                elif event.key == pg.K_UP:
+                    self.players[0].move(Cell.GO_UP)
+                    events.remove(event)
+                elif event.key == pg.K_DOWN:
+                    self.players[0].move(Cell.GO_DOWN)
+                    events.remove(event)
+        self.game_logic()
+        return events
+
+    def draw(self, surface):
+        surface.fill(self.bg_color)
+        surface.blit(self.maze_surf, (0, 0))
+        for p in self.players:
+            p.draw(surface)
+
+
+class GameGameTrans(GameScreen):
+    def __init__(self, old_game: MazeGame, new_game: MazeGame):
+        super().__init__()
+        self.surface1 = pygame.Surface(pygame.display.get_window_size())
+
+    def resize(self, size):
+        pass
+
+    def handle_events(self, events: list[pygame.event.Event]) -> list[pygame.event.Event]:
+        pass
+
+    def draw(self, surface: pygame.Surface) -> None:
+        pass
+
+
 if __name__ == '__main__':
 
     def test_callback(widget):
@@ -614,6 +876,8 @@ if __name__ == '__main__':
         pygame.init()
         screen = pygame.display.set_mode((800, 600), pygame.RESIZABLE)
         set_theme((200, 120, 0))
+        clock = pygame.time.Clock()
+
         if test_idx == 1:
             sc = WelcomeScreen((800, 600),
                                sound_switch_cb=test_callback,
@@ -622,9 +886,12 @@ if __name__ == '__main__':
                                size_set_cb=test_callback,
                                diff_set_cb=test_callback
                                )
-        else:
+        elif test_idx == 2:
             sc = HUD((800, 600))
+        else:
+            sc = MazeGame()
         while True:
+            clock.tick(60)
             event_ls = pygame.event.get()
             event_ls = sc.handle_events(event_ls)
             for event in event_ls:
@@ -640,4 +907,4 @@ if __name__ == '__main__':
             pygame.display.flip()
 
 
-    test(1)
+    test(3)
