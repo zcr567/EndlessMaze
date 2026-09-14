@@ -8,7 +8,7 @@ from pygame.draw import line
 
 from Resources import *
 from effects import *
-from maze import Maze,DIFFICULTY_PRESETS,SIZE_PRESETS
+from maze import Maze, DIFFICULTY_PRESETS, SIZE_PRESETS
 from widgets import WelcomeScreen, HUD
 from vectors import Cell, DIR_VECS
 # noinspection PyPep8Naming
@@ -157,7 +157,7 @@ class MazeGame:
 
     def __init__(self, surf, gamemode=GameMode.SINGLE,
                  size_preset="medium", difficulty="normal"):
-        #common
+        # common
         self.gamemode = gamemode
         self.size_preset = size_preset
         self.difficulty = difficulty
