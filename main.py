@@ -301,6 +301,7 @@ if __name__ == '__main__':
                 state = GameState.PLAYING
             elif action == "toggle_sound":
                 sound_on = not sound_on
+            welcome.update()
             welcome.draw(screen)
 
         elif state == GameState.PLAYING:
