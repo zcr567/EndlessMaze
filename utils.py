@@ -2,6 +2,7 @@
 Low-level tool functions that all modules may use.
 Author: ZCR
 """
+import time
 from os.path import abspath
 import sys
 
@@ -99,3 +100,57 @@ def adjust_color(color,
         return nr, ng, nb, color[3]
 
     return nr, ng, nb
+
+
+class Timer:
+    def __init__(self):
+        self._start_t = 0.0
+        self._paused_t = 0.0
+        self._running = False
+        self._paused_timedelta = 0.0
+
+    @property
+    def running(self):
+        return self._running
+
+    def start(self):
+        """start the timer, only works if the timer is not running"""
+        if not self._running:
+            self._start_t = time.perf_counter()
+            self._paused_timedelta = 0.0
+            self._running = True
+
+    def pause(self):
+        """pause the timer"""
+        if self._running and self._paused_t == 0.0:
+            self._paused_t = time.perf_counter()
+
+    def resume(self):
+        """resume the timer"""
+        if self._running and self._paused_t != 0.0:
+            paused_delta = time.perf_counter() - self._paused_t
+            self._paused_timedelta += paused_delta
+            self._paused_t = 0.0
+
+    def get(self):
+        """return current timedelta"""
+        if not self._running:
+            return 0.0
+        if self._paused_t != 0.0:
+            return self._paused_t - self._start_t - self._paused_timedelta
+        return time.perf_counter() - self._start_t - self._paused_timedelta
+
+    def get_str(self):
+        """return formated string: MM:SS:mmm"""
+        total_seconds = self.get()
+        minutes = int(total_seconds // 60)
+        seconds = int(total_seconds % 60)
+        milliseconds = int((total_seconds - int(total_seconds)) * 1000)
+        return f"{minutes:02d}:{seconds:02d}:{milliseconds:03d}"
+
+    def clear(self):
+        """reset the timer"""
+        self._start_t = 0.0
+        self._paused_t = 0.0
+        self._running = False
+        self._paused_timedelta = 0.0

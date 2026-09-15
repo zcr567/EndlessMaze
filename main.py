@@ -1,342 +1,182 @@
 import os
-import random
-from enum import IntEnum, IntFlag
+from enum import IntEnum
 
 import pygame
 import pygame as pg
-from pygame.draw import line
 
 from Resources import *
 from effects import *
-from maze import Maze, DIFFICULTY_PRESETS, SIZE_PRESETS
-from widgets import WelcomeScreen, HUD
-from vectors import Cell, DIR_VECS
 # noinspection PyPep8Naming
-from vectors import Vector as V
+from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, ManuGameTrans
 
 # executable generating command
 # pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
 
-
 pg.init()
-INIT_SCREEN_SIZE = (600, 800)
-window_size = (0, 0)
-
-
-class PlayerType(IntEnum):
-    SINGLE = 0
-    PREDATOR = 1
-    prey = 2
-
-
-class GameMode(IntEnum):
-    SINGLE = 0
-    DOUBLE = 1
+INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
 
 
 class GameState(IntEnum):
     MENU = 0
     PLAYING = 1
     PAUSED = 2
+    GAME_GAME_TRANSITION = 3
+    MENU_GAME_TRANSITION = 4
 
 
-class DispState(IntFlag):
-    IDLE = 1
-    MOVING = 2
-    ROTATING = 4
-    DYING = 8
+def _test_cb(*args):
+    print(args)
 
 
-game_mode = GameMode.SINGLE
+class Game:
+    def __init__(self):
 
+        # initialize game window
+        self.state = GameState.MENU
+        self.clock = pg.time.Clock()
+        self.screen = pg.display.set_mode(INIT_SCREEN_SIZE, pygame.RESIZABLE)
+        pg.display.set_caption('EndlessMaze')
+        pg.display.set_icon(app_logo)
+        self.window_size = pg.display.get_window_size()
+        self.p1, self.p2 = Player(), Player()
 
-class Player:
-    """Player class."""
+        # game sound config
+        self.sound_on = True
 
-    def __init__(self, game, pos0=V(0, 0), heading=Cell.GO_UP, player_type=PlayerType.SINGLE):
-        # basic properties
-        self.game: MazeGame = game
-        self.maze: Maze = self.game.maze
-        self.surface = self.game.screen
-        self.player_type = player_type
-        self.pos = pos0
-        self.heading = heading
-
-        # game logic
-        self.eaten = 0
-        self.eat = 0
-
-        # display
-        if self.player_type == PlayerType.PREDATOR:
-            self.anim_dict: dict[Cell:Animation] = predator_anim_dict
-        else:
-            self.anim_dict: dict[Cell:Animation] = prey_anim_dict
-        self.cur_anim: Animation = self.anim_dict[self.heading]
-        self.cur_anim.set_position(self.pos_to_surf())
-        self.disp_state = DispState.IDLE
-
-        self.movement_intp = ReversedQuad(step=15)
-        self.pos_next = self.pos
-        self.movement_vec = V(0, 0)
-
-    def pos_to_surf(self, pos=None):
-        """return the current position in maze_surf coordinates"""
-        if pos is None:
-            return V(int(self.game.region[0] + self.game.cell_width * (self.pos[0] + 0.5) + 1),
-                     int(self.game.region[1] + self.game.cell_width * (self.pos[1] + 0.5)) + 1)
-        else:
-            return V(int(self.game.region[0] + self.game.cell_width * (pos[0] + 0.5) + 1),
-                     int(self.game.region[1] + self.game.cell_width * (pos[1] + 0.5)) + 1)
-
-    def _is_available(self, vec):
-        """return True if there is no obstacle between 'self.pos_next' and 'self.pos_next + vec'"""
-        return (self.maze.is_valid_coord(self.pos_next + vec)
-                and self.game.inst[2 * self.pos_next[1] + vec[1] + 1][2 * self.pos_next[0] + vec[0] + 1] == 2)
-
-    def move(self, direction: Cell):
-        # calculate the next position
-        if self.disp_state & DispState.MOVING:
-            return
-        vec = DIR_VECS[direction]
-        if direction != self.heading:
-            self.heading = direction
-            self.disp_state |= DispState.ROTATING
-        all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
-        if self._is_available(vec):
-            self.pos_next += vec
-        else:
-            return
-        while (self._is_available(vec)
-               and not self._is_available(all_headings[(all_headings.index(vec) + 1) % 4])
-               and not self._is_available(all_headings[(all_headings.index(vec) + 3) % 4])
-               and not self.pos == self.maze.end):
-            # the condition: there is one available cell in the front, and there is no branch at the current cell
-            # and the current cell is not the end of the maze
-            self.pos_next += vec
-
-        # initialize movement animation
-        self.movement_intp = ReversedQuad(step=5 * abs(sum(self.pos_next - self.pos)))
-        self.movement_vec = self.pos_to_surf(self.pos_next) - self.pos_to_surf(self.pos)
-        self.disp_state |= DispState.MOVING
-
-    def draw(self):
-        if self.disp_state & DispState.MOVING:
-            if self.movement_intp.get() != 1:
-                self.cur_anim.set_position(self.pos_to_surf() + self.movement_vec * self.movement_intp.get())
-                self.movement_intp.update()
-            else:
-                self.disp_state ^= DispState.MOVING
-                self.pos = self.pos_next
-                self.movement_intp.set(0)
-                self.movement_vec = V(0, 0)
-        if self.disp_state & DispState.ROTATING:
-            fid = self.cur_anim.get_frame_id()
-            pos = self.cur_anim.get_position()
-            self.cur_anim = self.anim_dict[self.heading]
-            self.cur_anim.set_frame_id(fid)
-            self.cur_anim.set_position(pos)
-            self.disp_state ^= DispState.ROTATING
-        if self.disp_state == DispState.IDLE:  # must be "==" !
-            self.cur_anim.set_position(self.pos_to_surf())
-
-        self.cur_anim.step()
-        self.cur_anim.draw(self.surface, size=[self.game.cell_width * 1.2, self.game.cell_width * 1.2])
-
-
-class MazeGame:
-    MAZE_EDGE_COLOR = (255, 255, 255)
-    BG_COLORS = ((204, 128, 204), (108, 150, 200), (200, 175, 64), (100, 204, 100))
-    _instance = None
-    MAX_MAZE_WIDTH = 10
-    MAX_MAZE_HEIGHT = 10
-
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
-    def __init__(self, surf, gamemode=GameMode.SINGLE,
-                 size_preset="medium", difficulty="normal"):
-        # common
-        self.gamemode = gamemode
-        self.size_preset = size_preset
-        self.difficulty = difficulty
-        side_min, side_max = SIZE_PRESETS[size_preset]
-        self.field_width = random.randint(side_min, side_max)
-        self.field_height = random.randint(side_min, side_max)
-        diff_kwargs = DIFFICULTY_PRESETS[difficulty] or {}
-        self.maze = Maze((self.field_width, self.field_height), **diff_kwargs)
-        self.inst = self.maze.draw_instructions()
-
-        # display related
-        self.maze_surf = pygame.Surface(window_size, pygame.SRCALPHA)
-        self.bg_color = random.choice(self.BG_COLORS)
-        self.screen = surf
-        self.region = V(0, 0)
-        self.cell_width = 0
-        self.maze_edge_width = 0
-        self.update_arrangement()
+        # game screens
+        self.welcome = WelcomeScreen(self.window_size,
+                                     sound_switch_cb=self.toggle_sound,
+                                     size_set_cb=self.set_maze_size,
+                                     single_player_cb=self.start_single_player,
+                                     double_player_cb=self.start_double_player,
+                                     diff_set_cb=self.set_difficulty)
+        self.maze_game: MazeGame | None = None  # will be initialized when start button hit
+        self.current_screen = self.welcome
+        self.next_game = None
 
         # game logic related
-        self.players = []
-        if gamemode == GameMode.SINGLE:
-            self.players.append(Player(self, pos0=self.maze.start))
-        elif gamemode == GameMode.DOUBLE:
-            pass
+        self.game_mode = GameMode.SINGLE
+        self.maze_size_preset = 'medium'
+        self.maze_diff_preset = 'normal'
 
-    def update_arrangement(self):
-        """update the screen size variables, call every time the screen size changes"""
-        global window_size
-        window_size = pg.display.get_window_size()
-        self.maze_surf = pygame.Surface(window_size, pygame.SRCALPHA)
-        self.cell_width = min(window_size[0] / (self.field_width * 1.2), window_size[1] / (self.field_height * 1.2))
-        self.maze_edge_width = max(int(self.cell_width // 6), 1)
-        size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
-        self.region = ((window_size[0] - size[0]) / 2, (window_size[1] - size[1]) / 2)
+    def toggle_sound(self):
+        # TODO: complete the function after sounds are prepared
+        print("called toggle_sound()")
+        self.sound_on = not self.sound_on
+        if self.maze_game is not None:
+            self.maze_game.hud.set_sound(self.sound_on)
+            self.maze_game.pause_screen.set_sound(self.sound_on)
 
-    def draw_maze(self):
-        """draw the maze on "self.maze_surf" property."""
-        self.maze_surf.fill((0, 0, 0, 0))
-        # self.inst = self.maze.draw_instructions()
-        for row in range(self.field_height * 2 + 1):
-            for col in range(self.field_width * 2 + 1):
-                op = self.inst[row][col]
-                if row % 2 == 0 and col % 2 == 1 and op == 0:
-                    line(self.maze_surf,
-                         self.MAZE_EDGE_COLOR,
-                         (int(self.region[0] + self.cell_width * (col // 2)),
-                          int(self.region[1] + self.cell_width * (row // 2))),
-                         (int(self.region[0] + self.cell_width * (col // 2) + self.cell_width),
-                          int(self.region[1] + self.cell_width * (row // 2))),
-                         width=self.maze_edge_width)
-                elif row % 2 == 1 and col % 2 == 0 and op == 0:
-                    line(self.maze_surf,
-                         self.MAZE_EDGE_COLOR,
-                         (int(self.region[0] + self.cell_width * (col // 2)),
-                          int(self.region[1] + self.cell_width * (row // 2))),
-                         (int(self.region[0] + self.cell_width * (col // 2)),
-                          int(self.region[1] + self.cell_width * (row // 2) + self.cell_width)),
-                         width=self.maze_edge_width)
+    def start_single_player(self):
+        print("called start_single_player()")
+        self.current_screen = ManuGameTrans(self.welcome, gamemode=GameMode.SINGLE,
+                                            size_preset=self.maze_size_preset,
+                                            difficulty=self.maze_diff_preset,
+                                            players=[self.p1],
+                                            pause_cb=self.pause_game,
+                                            sound_switch_cb=self.toggle_sound,
+                                            resume_cb=self.resume_game,
+                                            menu_cb=self.quit_to_menu)
 
-                # add round corners
-                if self.maze_edge_width > 2:
-                    # center coordinate plus (1, 1) to align the circles with the lines
-                    # (ways line() and circle() calculate coordinate are different)
-                    pygame.draw.circle(self.maze_surf,
-                                       self.MAZE_EDGE_COLOR,
-                                       (int(self.region[0] + self.cell_width * (col // 2) + 1),
-                                        int(self.region[1] + self.cell_width * (row // 2)) + 1),
-                                       int(self.maze_edge_width / 2))
+    # noinspection PyMethodMayBeStatic
+    def start_double_player(self):
+        # TODO: complete it after two-player mode is implemented
+        print("called start_double_player()")
 
-    def game_logic(self):
-        pass
+    def set_difficulty(self, preset: str):
+        print(f"called set_difficulty({preset})")
+        self.maze_diff_preset = preset
 
-    def handle_events(self, events):
-        for event in events:
-            if event.type == pg.KEYDOWN:
-                if event.key == pg.K_RIGHT:
-                    self.players[0].move(Cell.GO_RIGHT)
-                elif event.key == pg.K_LEFT:
-                    self.players[0].move(Cell.GO_LEFT)
-                elif event.key == pg.K_UP:
-                    self.players[0].move(Cell.GO_UP)
-                elif event.key == pg.K_DOWN:
-                    self.players[0].move(Cell.GO_DOWN)
+    def set_maze_size(self, preset: str):
+        print(f"called set_maze_size({preset})")
+        self.maze_size_preset = preset
+
+    def pause_game(self):
+        # called by the HUD pause button / ESC while playing
+        if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
+            self.state = GameState.PAUSED
+            print("called pause_game()")
+
+    def resume_game(self):
+        # called by the pause screen resume button / ESC
+        if self.state == GameState.PAUSED:
+            self.state = GameState.PLAYING
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 6))
+            print("called resume_game()")
+
+    def quit_to_menu(self):
+        # called by the pause screen menu button; back to the main menu with a transition
+        print("called quit_to_menu()")
+        self.state = GameState.MENU
+        self.current_screen = ManuGameTrans(self.maze_game, _manu=self.welcome)
+
+    def run(self):
+        # main loop
+        while True:
+            self.clock.tick(60)
+            events = pg.event.get()
+
+            # window managing
+            for event in events:
+                if event.type == pg.QUIT:
+                    pg.quit()
+                    raise SystemExit
+                if event.type == pg.WINDOWSIZECHANGED:
+                    self.current_screen.resize(pygame.display.get_window_size())
+                if event.type == pg.USEREVENT + 2:  # game ends
+                    print(self.maze_game)
+                    self.state = GameState.GAME_GAME_TRANSITION
+                    self.current_screen = GameGameTrans(self.maze_game)
+                    # self.start_single_player()
+                    # self.current_screen = self.welcome
+                if event.type == pg.USEREVENT + 3:  # game-game transition ends
+                    self.maze_game = self.current_screen.get_new_game()
+                    self.current_screen = self.maze_game
+                    self.state = GameState.PLAYING
+                    self.next_game = None
+                if event.type == pg.USEREVENT + 4:  # from menu to game
+                    self.maze_game = self.current_screen.get_new_screen()
+                    self.current_screen = self.maze_game
+                    self.current_screen.start_timing()
+                    self.state = GameState.PLAYING if isinstance(self.maze_game, MazeGame) else GameState.MENU
+                    self.next_game = None
+                if event.type == pg.USEREVENT + 5:  # from game to menu
+                    self.current_screen = self.welcome
+                    self.state = GameState.MENU
+                if event.type == pg.USEREVENT + 6:
+                    if type(self.current_screen) is MazeGame:
+                        self.current_screen.resume_timing()
+                if event.type == pg.KEYDOWN:
+                    if (event.key == pg.K_BACKSPACE and not isinstance(self.current_screen, WelcomeScreen)
+                            and not isinstance(self.current_screen, ManuGameTrans)):
+                        self.state = GameState.MENU
+                        self.current_screen = ManuGameTrans(self.current_screen, _manu=self.welcome)
+                    elif event.key == pg.K_ESCAPE:
+                        # ESC toggles pause while the maze is running
+                        if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
+                            self.pause_game()
+                        elif self.state == GameState.PAUSED:
+                            self.resume_game()
+            if self.state == GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
+                self.maze_game.pause_screen.handle_events(events)
+                if type(self.current_screen) is MazeGame:
+                    self.current_screen.pause_timing()
             else:
-                pass
-                # print(event)
+                self.current_screen.handle_events(events)
+                if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
+                    self.maze_game.hud.handle_events(events)
 
-    def update_display(self):
-        self.screen.fill(self.bg_color)
-        self.draw_maze()
-        self.screen.blit(self.maze_surf, (0, 0))
-        for p in self.players:
-            p.draw()
+            update_effects()
+            self.current_screen.draw(self.screen)
+            if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
+                self.maze_game.hud.draw(self.screen)
+            elif self.state == GameState.PAUSED:
+                self.maze_game.pause_screen.draw(self.screen)
+            pygame.display.flip()
 
 
-frame_id = 0
 if __name__ == '__main__':
-    clock = pg.time.Clock()
-
     window_pos = (0, 30)
     os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
-
-    screen = pg.display.set_mode(INIT_SCREEN_SIZE, pygame.RESIZABLE)
-    pg.display.set_caption('EndlessMaze')
-    pg.display.set_icon(app_logo)
-    window_size = pg.display.get_window_size()
-
-    main_game = MazeGame(screen)
-
-    welcome = WelcomeScreen(window_size)
-    hud = HUD(window_size)
-    main_game: MazeGame | None = None
-    sound_on = True
-    state = GameState.MENU
-
-    while True:
-        clock.tick(60)
-        events = pg.event.get()
-
-        # 窗口级事件
-        for event in events:
-            if event.type == pg.QUIT:
-                pg.quit()
-                raise SystemExit
-            if event.type == pg.WINDOWSIZECHANGED:
-                window_size = pg.display.get_window_size()
-                welcome.resize(window_size)
-                hud.resize(window_size)
-                if main_game is not None:
-                    main_game.update_arrangement()
-
-        esc_pressed = any(e.type == pg.KEYDOWN and e.key == pg.K_ESCAPE for e in events)
-
-        if state == GameState.MENU:
-            action = welcome.handle_events(events)
-            if action == "start_single":
-                main_game = MazeGame(screen, size_preset=welcome.size_preset,
-                                     difficulty=welcome.difficulty)
-                hud.set_paused(False)
-                state = GameState.PLAYING
-            elif action == "toggle_sound":
-                sound_on = not sound_on
-            welcome.update()
-            welcome.draw(screen)
-
-        elif state == GameState.PLAYING:
-            if esc_pressed:
-                state = GameState.PAUSED
-                hud.set_paused(True)
-            else:
-                main_game.handle_events(events)
-                action = hud.handle_events(events)
-                if action == "pause":
-                    state = GameState.PAUSED
-                    hud.set_paused(True)
-                elif action == "toggle_sound":
-                    sound_on = not sound_on
-            main_game.game_logic()
-            main_game.update_display()
-            hud.draw(screen, main_game.players[0].eaten)
-
-        else:  # GameState.PAUSED
-            if esc_pressed:
-                state = GameState.PLAYING
-                hud.set_paused(False)
-            else:
-                action = hud.handle_events(events)
-                if action == "resume":
-                    state = GameState.PLAYING
-                    hud.set_paused(False)
-                elif action == "quit_to_menu":
-                    state = GameState.MENU
-                    hud.set_paused(False)
-                elif action == "toggle_sound":
-                    sound_on = not sound_on
-            main_game.update_display()
-            hud.draw(screen, main_game.players[0].eaten)
-
-        welcome.set_sound(sound_on)
-        hud.set_sound(sound_on)
-        pygame.display.flip()
+    app = Game()
+    app.run()

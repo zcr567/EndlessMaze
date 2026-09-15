@@ -10,31 +10,28 @@ author: ZCR
 ======================================
 """
 import math
-from random import random, randint, choice
 from hashlib import md5
+from random import random, randint, choice
 
 from vectors import *
 
 V = Vector
 
 DIFFICULTY_PRESETS = {
-    "easy":   None,
-    "normal": None,
-    "hard":   None,
+    "easy": [2,],
+    "normal": [5,],
+    "hard": [7,],
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {
-    "small":  (4, 6),
-    "medium": (6, 8),
-    "large":  (8, 10),
+    "small": (5, 10),
+    "medium": (10, 20),
+    "large": (20, 40),
 }
-
-# noinspection PyUnusedLocal
-def _(*args):
-    pass
 
 
 def count(start, stop):
+    """an enhanced version of range(), supports stop smaller than start"""
     if start > stop:
         return range(start, stop, -1)
     else:
@@ -43,7 +40,14 @@ def count(start, stop):
 
 class Maze:
 
-    def __init__(self, size: vec_like = (10, 10), start: vec_like = None, end: vec_like = None, filepath=None):
+    def __init__(self,
+                 size: vec_like = (10, 10),
+                 start: vec_like = None,
+                 end: vec_like = None,
+                 start_edge=None,
+                 end_edge=None,
+                 filepath=None,
+                 diff_preset="normal"):
 
         self._size = size
         self._start = start
@@ -55,10 +59,16 @@ class Maze:
         self._right_path = []
 
         # hyperparameters for branching
-        self.PATH_LENGTH_UNIFORMITY = 2  # larger than 1, controls the length uniformity of the right path's segments
-        self.BRANCH_THR = math.sqrt(self._width * self._height) // 2  # controls branch nesting depth
-        self.BRANCH_EXTEND_PROB = 1 - 1 / (self._width + self._height)  # controls average branch length
-        self.MAKING_BRANCH_PROB = .8  # controls branch numbers
+        self.diff_preset = diff_preset
+        # TODO: find a set of parameters below, to implement difficulty preset function
+        self.PATH_LENGTH_UNIFORMITY = DIFFICULTY_PRESETS[diff_preset][0]
+        # larger than 1, controls the length uniformity of the right path's segments
+        self.BRANCH_THR = math.sqrt(self._width * self._height) // 2
+        # controls branch nesting depth
+        self.BRANCH_EXTEND_PROB = 1 - 1 / (self._width + self._height)
+        # controls average branch length
+        self.MAKING_BRANCH_PROB = .8
+        # controls branch numbers
 
         if filepath is not None:
             try:
@@ -74,10 +84,13 @@ class Maze:
                 raise FileNotFoundError(f"File '{filepath}' not found")
             return
 
+        self.start_edge = start_edge
+        self.end_edge = end_edge
+
         if start is None:
-            self._start = self._b_select()
+            self._start = self._b_select(start_edge, is_start=True)
             while self._start == self._end:
-                self._start = self._b_select()
+                self._start = self._b_select(start_edge, is_start=True)
         else:
             if self.is_valid_coord(start):
                 self._start = start
@@ -85,9 +98,9 @@ class Maze:
                 raise ValueError("Invalid coordinate for parameter start")
 
         if end is None:
-            self._end = self._b_select()
+            self._end = self._b_select(end_edge, is_end=True)
             while abs(self._start[0] - self._end[0]) + abs(self._start[1] - self._end[1]) < 2:
-                self._start = self._b_select()
+                self._start = self._b_select(end_edge, is_start=True)
         else:
             if self.is_valid_coord(end):
                 self._end = end
@@ -96,6 +109,8 @@ class Maze:
 
         self.set_p(self._start, 5)
         self.generate()
+
+        # print(f"{start_edge} {self.start_edge} {self.end_edge}")
 
     # do NOT change the order of the two lists below
     REPR_CORNER_ENUM = ['┼', '┤', '┬', '┐', '├', '│', '┌', ' ', '┴', '┘', '─', ' ', '└', ' ', ' ', ' ']
@@ -184,6 +199,14 @@ class Maze:
         return r
 
     @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
     def start(self):
         return self._start
 
@@ -191,18 +214,32 @@ class Maze:
     def end(self):
         return self._end
 
-    def _b_select(self):
+    @property
+    def p_len(self):
+        return len(self._right_path)
+
+    def _b_select(self, edge=None, is_start=False, is_end=False):
         """Select a random point on the edge of the maze, and mark it in the _data property. Each point has an equal
         probability to be chosen. This function is used to determine the start and end points of the maze."""
-        t = randint(0, (self._width + self._height) * 2 - 5)
-        if 0 <= t < self._width - 1:  # top edge
+        edge = edge if edge is not None else randint(0, 3)
+        if edge == 0:  # top edge
+            t = randint(1, self.width - 2)
             p = (t, 0)
-        elif self._width - 1 <= t < self._width + self._height - 2:  # right edge
+        elif edge == 1:  # right edge
+            t = randint(self.width, self.width + self.height - 3)
             p = (self._width - 1, t - self._width + 1)
-        elif self._width + self._height - 2 <= t < self._width * 2 + self._height - 3:  # bottom edge
+        elif edge == 2:  # bottom edge
+            t = randint(self.width + self.height - 1, self.width * 2 + self.height - 4)
             p = (t - self._width - self._height + 2, self._height - 1)
-        else:  # left edge
+        elif edge == 3:  # left edge
+            t = randint(self.width * 2 + self.height - 2, self.width * 2 + self.height * 2 - 5)
             p = (0, t - self._height - self._width * 2 + 3)
+        else:
+            raise ValueError(f"Wrong edge value {edge}")
+        if is_start:
+            self.start_edge = edge
+        elif is_end:
+            self.end_edge = edge
         return p
 
     def get_right_path(self):
@@ -257,7 +294,7 @@ class Maze:
     def _bend(self):
         # randomly choose a path segment to be bent
         # ln_raw = choice(self._ls_paths)
-        ln_raw = choice(self._ls_paths[:len(self._ls_paths) // self.PATH_LENGTH_UNIFORMITY])
+        ln_raw = choice(self._ls_paths[:max(len(self._ls_paths) // self.PATH_LENGTH_UNIFORMITY, 1)])
         ln = ln_raw.copy()
         failed_count = 0
         while len(ln) < 2:
@@ -397,11 +434,9 @@ class Maze:
                         bp_count += 1
             existing = new
             if bp_count <= self.BRANCH_THR:
-                print("exit branching")
                 break
 
     def generate(self):
-        print("generate() called")
         if len(self._right_path):
             return
         self._gen_right_path()
@@ -412,6 +447,7 @@ class Maze:
 if __name__ == '__main__':
     # a simple save-load test
     import os
+
     maze = Maze()
     print(maze)
     maze.save("maze1.txt")
