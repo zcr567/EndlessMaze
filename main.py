@@ -16,6 +16,7 @@ pg.init()
 INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
 pg.mixer.init()
 
+
 class GameState(IntEnum):
     MENU = 0
     PLAYING = 1
@@ -30,6 +31,7 @@ def _test_cb(*args):
 
 class Game:
     BG_MUSIC_VOLUME = 0.5
+
     def __init__(self):
 
         # initialize game window
@@ -192,4 +194,3 @@ if __name__ == '__main__':
     os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
     app = Game()
     app.run()
-

@@ -18,9 +18,9 @@ from vectors import *
 V = Vector
 
 DIFFICULTY_PRESETS = {
-    "easy": [2,],
-    "normal": [5,],
-    "hard": [7,],
+    "easy": [2, ],
+    "normal": [5, ],
+    "hard": [7, ],
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {

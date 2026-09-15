@@ -7,6 +7,7 @@ from enum import IntEnum, IntFlag
 
 import pygame
 import pygame as pg
+
 from Resources import *
 from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
 from effects import Linear, Quad, DoubleQuad, ReversedQuad, Shadow, ChangeColor, RoundMaskFade, Fade
@@ -516,25 +517,25 @@ class HUD(GameScreen):
     # In-game heads-up display: P1/P2 score rows on top, sound / pause buttons at the bottom corners.
 
     # layout hyperparameters
-    MARGIN = 8            # top / side margin (kept small so the HUD stays above the maze)
+    MARGIN = 8  # top / side margin (kept small so the HUD stays above the maze)
     SCORE_ICON_SIZE = 28  # eat icon size in pixels (skull removed)
     SCORE_GAP = 8  # gap between the label and the score items
     SCORE_FONT_SIZE = 20
     SCORE_COLOR = (255, 255, 255)  # score number color
-    LABEL_H = 80          # P1/P2 title image height (enlarged but capped to avoid covering maze)
+    LABEL_H = 80  # P1/P2 title image height (enlarged but capped to avoid covering maze)
     LABEL_H_RATIO = 0.10  # title height also capped to this fraction of window height
     TIMER_FONT_SIZE = 36  # in-game timer text size (centered on top)
     TIMER_COLOR = (255, 255, 255)  # timer text color, consistent with score numbers
-    PTS_FONT_SIZE = 24   # "pts N" score display font size
+    PTS_FONT_SIZE = 24  # "pts N" score display font size
     PTS_COLOR = (255, 255, 255)  # pts text color, consistent with timer / score
-    PTS_GAP = 12         # gap between the P1 label (or its scores) and the pts text
+    PTS_GAP = 12  # gap between the P1 label (or its scores) and the pts text
 
     def __init__(self, size, game_mode=None,
                  pause_cb=None, sound_switch_cb=None, fetch_scores_cb=None,
                  fetch_time_cb=None):
         """
             :param game_mode: GameMode.SINGLE shows the P1 label only (no skull);
-                GameMode.DOUBLE shows the skull and the eat icon for both players
+                 "GameMode.DOUBLE" shows the skull and the eat icon for both players
             :param pause_cb: called when the pause button is hit, no arguments
             :param sound_switch_cb: called when the sound button is toggled, no arguments
             :param fetch_scores_cb: called every frame to fetch per-player scores,
@@ -654,7 +655,7 @@ class HUD(GameScreen):
         return cx
 
     def _draw_timer(self, surface, label_h):
-        # top-center timer; rendered every frame so it stays in sync with the Timer
+        # top-center timer; rendered every frame, so it stays in sync with the Timer
         text = make_font(self.TIMER_FONT_SIZE).render(
             self._fetch_time_str(), True, self.TIMER_COLOR)
         self._timer_surf = text
@@ -1215,10 +1216,10 @@ class GameGameTrans(GameScreen):
         self.line_length = sum(pg.display.get_window_size())
 
         # stats text animation state (built lazily on the first stats frame)
-        self._stats_surf = None       # pre-rendered surface holding the three text lines
-        self._stats_pos = V(0, 0)     # final blit position of the stats block
-        self._stats_enter = None      # fly-in interpolation
-        self._stats_fade = None       # Fade effect started when pre_p3 flips to 1
+        self._stats_surf = None  # pre-rendered surface holding the three text lines
+        self._stats_pos = V(0, 0)  # final blit position of the stats block
+        self._stats_enter = None  # fly-in interpolation
+        self._stats_fade = None  # Fade effect started when pre_p3 flips to 1
 
     def resize(self, size):
         self.maze1.resize(size)
