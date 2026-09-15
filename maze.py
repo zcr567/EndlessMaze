@@ -214,6 +214,10 @@ class Maze:
     def end(self):
         return self._end
 
+    @property
+    def p_len(self):
+        return len(self._right_path)
+
     def _b_select(self, edge=None, is_start=False, is_end=False):
         """Select a random point on the edge of the maze, and mark it in the _data property. Each point has an equal
         probability to be chosen. This function is used to determine the start and end points of the maze."""

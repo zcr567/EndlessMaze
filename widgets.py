@@ -11,7 +11,7 @@ import pygame as pg
 from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
 from effects import Linear, Quad, DoubleQuad, ReversedQuad, Shadow, ChangeColor, RoundMaskFade
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
-from utils import adjust_color
+from utils import adjust_color, Timer
 # noinspection PyPep8Naming
 from vectors import Vector as V, Cell, DIR_VECS
 
@@ -518,10 +518,10 @@ class HUD(GameScreen):
     # layout hyperparameters
     MARGIN = 16
     SCORE_ICON_SIZE = 28  # skull / eat icon size in pixels
-    SCORE_GAP = 8         # gap between the label and the score items
+    SCORE_GAP = 8  # gap between the label and the score items
     SCORE_FONT_SIZE = 20
     SCORE_COLOR = (255, 255, 255)  # score number color
-    LABEL_H = 66          # P1/P2 title image height
+    LABEL_H = 66  # P1/P2 title image height
     LABEL_H_RATIO = 0.09  # title height also capped to this fraction of window height
 
     def __init__(self, size, game_mode=None,
@@ -756,6 +756,7 @@ class Player:
         self.size = (0, 0) if self.game is None else (self._game.cell_width * 1.2, self._game.cell_width * 1.2)
 
         # game logic
+        self.score = 0
         self.eaten = 0
         self.eat = 0
 
@@ -874,6 +875,11 @@ class MazeGame(GameScreen):
     BG_COLORS = ((204, 128, 204), (108, 150, 200), (200, 175, 64), (100, 204, 100))
     MAX_MAZE_WIDTH = 10
     MAX_MAZE_HEIGHT = 10
+    SCORE_DICT = {
+        GameMode.SINGLE: {"easy": 1, "normal": 2, "hard": 3},
+        GameMode.DOUBLE: {
+        }
+    }
 
     def __init__(self, gamemode=GameMode.SINGLE,
                  size_preset="medium", difficulty="normal", players=None, start_edge=None, end_edge=None,
@@ -908,6 +914,7 @@ class MazeGame(GameScreen):
         self.cell_width = 0
         self.maze_edge_width = 0
         self.resize(pg.display.get_window_size())
+        self.timer = Timer()
 
         # game logic related
         self.players = []
@@ -928,10 +935,10 @@ class MazeGame(GameScreen):
         self.resume_cb = resume_cb
         self.menu_cb = menu_cb
         self.hud = HUD(pg.display.get_window_size(),
-                        game_mode=gamemode,
-                        pause_cb=pause_cb,
-                        sound_switch_cb=sound_switch_cb,
-                        fetch_scores_cb=self.fetch_scores)
+                       game_mode=gamemode,
+                       pause_cb=pause_cb,
+                       sound_switch_cb=sound_switch_cb,
+                       fetch_scores_cb=self.fetch_scores)
         self.pause_screen = PauseScreen(pg.display.get_window_size(),
                                         resume_cb=resume_cb,
                                         menu_cb=menu_cb,
@@ -947,6 +954,7 @@ class MazeGame(GameScreen):
         if not self.players:
             return [(0, 0)]
         return [(p.eaten, p.eat) for p in self.players]
+
     def draw_maze(self, surf=None):
         """draw the maze on "self.maze_surf" property."""
         surf = self.maze_surf if surf is None else surf
@@ -983,9 +991,31 @@ class MazeGame(GameScreen):
                                    int(self.maze_edge_width / 2))
         Shadow(surf, (self.maze_edge_width // 2, self.maze_edge_width // 2))
 
+    @property
+    def time(self):
+        return self.timer.get()
+
+    def start_timing(self):
+        self.timer.start()
+
+    def pause_timing(self):
+        self.timer.pause()
+        print("pause timing")
+
+    def resume_timing(self):
+        self.timer.resume()
+        print("resume timing")
+
     def game_logic(self):
         if self.gamemode == GameMode.SINGLE:
             if self.players[0].pos == self.maze.end:
+                score = int(self.SCORE_DICT[self.gamemode][self.difficulty]
+                            * self.field_width
+                            * self.field_height
+                            * self.maze.p_len
+                            / self.timer.get())
+                self.players[0].score += score
+                print(self.players[0].score)
                 game_end = pg.event.Event(pg.USEREVENT + 2,
                                           {'gamemode': self.gamemode,
                                            'size': (self.field_width, self.field_height),
@@ -1023,6 +1053,8 @@ class MazeGame(GameScreen):
                 elif event.key == pg.K_DOWN:
                     self.players[0].move(Cell.GO_DOWN)
                     events.remove(event)
+                elif event.key == pg.USEREVENT + 6:
+                    self.resume_timing()
         self.game_logic()
         return events
 
@@ -1301,7 +1333,6 @@ class ManuGameTrans(GameScreen):
     HALF_DURATION = 20
 
     def __init__(self, old_screen, color=(0, 0, 0), _manu=None, **game_preset):
-        super().__init__()
         self.phase = 0
         self.fid = 0
         self.surf = pygame.Surface(pygame.display.get_window_size(), pygame.SRCALPHA)
@@ -1309,6 +1340,8 @@ class ManuGameTrans(GameScreen):
         self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION, interpolation=Quad, invert=True)
         self.anim.animate_now(initial_phase=1, direction=-1)
         self.old_screen = old_screen
+        if _manu:
+            _manu.resize(pygame.display.get_window_size())
         if isinstance(old_screen, WelcomeScreen):
             self.new_sc = MazeGame(**game_preset)
             try:
@@ -1321,17 +1354,19 @@ class ManuGameTrans(GameScreen):
 
     def resize(self, size: tuple[int, int] | V) -> None:
         ph, di = self.anim.phase, self.anim.direction
+        self.old_screen.resize(size)
+        self.new_sc.resize(size)
         self.surf = pygame.Surface(pygame.display.get_window_size())
         self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION - self.fid, interpolation=Quad, invert=True)
         self.anim.animate_now(initial_phase=ph, direction=di)
 
     def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
         if self.phase == 1 and self.fid == self.HALF_DURATION:
-            if isinstance(self.old_screen, WelcomeScreen):
+            if type(self.old_screen) is WelcomeScreen:
                 event = pygame.event.Event(pygame.USEREVENT + 4)
                 pygame.event.post(event)
             else:
-                event = pygame.event.Event(pg.USEREVENT + 4)
+                event = pygame.event.Event(pg.USEREVENT + 5)
                 pygame.event.post(event)
         return events
 

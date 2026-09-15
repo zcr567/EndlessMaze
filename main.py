@@ -101,6 +101,7 @@ class Game:
         # called by the pause screen resume button / ESC
         if self.state == GameState.PAUSED:
             self.state = GameState.PLAYING
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 6))
             print("called resume_game()")
 
     def quit_to_menu(self):
@@ -134,15 +135,17 @@ class Game:
                     self.state = GameState.PLAYING
                     self.next_game = None
                 if event.type == pg.USEREVENT + 4:  # from menu to game
-                    print("event received")
                     self.maze_game = self.current_screen.get_new_screen()
                     self.current_screen = self.maze_game
+                    self.current_screen.start_timing()
                     self.state = GameState.PLAYING if isinstance(self.maze_game, MazeGame) else GameState.MENU
                     self.next_game = None
-                if event.type == pg.USEREVENT + 5:
-                    print("event received")
+                if event.type == pg.USEREVENT + 5:  # from game to menu
                     self.current_screen = self.welcome
                     self.state = GameState.MENU
+                if event.type == pg.USEREVENT + 6:
+                    if type(self.current_screen) is MazeGame:
+                        self.current_screen.resume_timing()
                 if event.type == pg.KEYDOWN:
                     if (event.key == pg.K_BACKSPACE and not isinstance(self.current_screen, WelcomeScreen)
                             and not isinstance(self.current_screen, ManuGameTrans)):
@@ -156,6 +159,8 @@ class Game:
                             self.resume_game()
             if self.state == GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
                 self.maze_game.pause_screen.handle_events(events)
+                if type(self.current_screen) is MazeGame:
+                    self.current_screen.pause_timing()
             else:
                 self.current_screen.handle_events(events)
                 if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
