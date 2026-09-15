@@ -7,7 +7,7 @@ from enum import IntEnum, IntFlag
 
 import pygame
 import pygame as pg
-
+from Resources import *
 from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
 from effects import Linear, Quad, DoubleQuad, ReversedQuad, Shadow, ChangeColor, RoundMaskFade, Fade
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
@@ -866,6 +866,7 @@ class Player:
             return
         vec = DIR_VECS[direction]
         if direction != self._heading:
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
             self._heading = direction
             self.disp_state |= DispState.ROTATING
         all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
@@ -1335,6 +1336,7 @@ class GameGameTrans(GameScreen):
             for event in events:
                 if event.type == pg.KEYDOWN or event.type == pg.MOUSEBUTTONDOWN:
                     if not self.pre_p3:
+                        pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
                         self.color_anim.animate_now()
                         # fade the stats out together with the background color change
                         if self._stats_surf is not None and self._stats_fade is None:

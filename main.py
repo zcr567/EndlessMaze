@@ -14,7 +14,7 @@ from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, Ma
 
 pg.init()
 INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
-
+pg.mixer.init()
 
 class GameState(IntEnum):
     MENU = 0
@@ -29,6 +29,7 @@ def _test_cb(*args):
 
 
 class Game:
+    BG_MUSIC_VOLUME = 0.5
     def __init__(self):
 
         # initialize game window
@@ -39,6 +40,8 @@ class Game:
         pg.display.set_icon(app_logo)
         self.window_size = pg.display.get_window_size()
         self.p1, self.p2 = Player(), Player()
+        pg.mixer.music.play(-1)
+        pg.mixer.music.set_volume(self.BG_MUSIC_VOLUME)
 
         # game sound config
         self.sound_on = True
@@ -63,6 +66,11 @@ class Game:
         # TODO: complete the function after sounds are prepared
         print("called toggle_sound()")
         self.sound_on = not self.sound_on
+        if self.sound_on:
+            pygame.mixer.music.set_volume(self.BG_MUSIC_VOLUME)
+            pygame.mixer.music.play(-1)
+        else:
+            pygame.mixer.music.fadeout(500)
         if self.maze_game is not None:
             self.maze_game.hud.set_sound(self.sound_on)
             self.maze_game.pause_screen.set_sound(self.sound_on)
@@ -148,6 +156,8 @@ class Game:
                 if event.type == pg.USEREVENT + 6:
                     if type(self.current_screen) is MazeGame:
                         self.current_screen.resume_timing()
+                if event.type == pg.USEREVENT + 7 and self.sound_on:
+                    event.sound.play()
                 if event.type == pg.KEYDOWN:
                     if (event.key == pg.K_BACKSPACE and not isinstance(self.current_screen, WelcomeScreen)
                             and not isinstance(self.current_screen, ManuGameTrans)):
@@ -161,6 +171,8 @@ class Game:
                             self.resume_game()
             if self.state == GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
                 self.maze_game.pause_screen.handle_events(events)
+                if type(self.current_screen) is MazeGame:
+                    self.current_screen.pause_timing()
             else:
                 self.current_screen.handle_events(events)
                 if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
