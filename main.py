@@ -95,6 +95,7 @@ class Game:
         # called by the HUD pause button / ESC while playing
         if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
             self.state = GameState.PAUSED
+            self.maze_game.pause_timing()
             print("called pause_game()")
 
     def resume_game(self):
@@ -132,6 +133,7 @@ class Game:
                 if event.type == pg.USEREVENT + 3:  # game-game transition ends
                     self.maze_game = self.current_screen.get_new_game()
                     self.current_screen = self.maze_game
+                    self.current_screen.start_timing()
                     self.state = GameState.PLAYING
                     self.next_game = None
                 if event.type == pg.USEREVENT + 4:  # from menu to game
@@ -159,8 +161,6 @@ class Game:
                             self.resume_game()
             if self.state == GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
                 self.maze_game.pause_screen.handle_events(events)
-                if type(self.current_screen) is MazeGame:
-                    self.current_screen.pause_timing()
             else:
                 self.current_screen.handle_events(events)
                 if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
@@ -180,3 +180,4 @@ if __name__ == '__main__':
     os.environ['SDL_VIDEO_WINDOW_POS'] = f"{window_pos[0]},{window_pos[1]}"
     app = Game()
     app.run()
+
