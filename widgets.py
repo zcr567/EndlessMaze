@@ -513,88 +513,200 @@ class WelcomeScreen(GameScreen):
 
 
 class HUD(GameScreen):
-    # In-game heads-up display: score pill, pause / sound buttons, pause panel.
+    # In-game heads-up display: P1/P2 score rows on top, sound / pause buttons at the bottom corners.
 
-    def __init__(self, size, sound_switch_cb=None):
+    # layout hyperparameters
+    MARGIN = 16
+    SCORE_ICON_SIZE = 28  # skull / eat icon size in pixels
+    SCORE_GAP = 8         # gap between the label and the score items
+    SCORE_FONT_SIZE = 20
+    SCORE_COLOR = (255, 255, 255)  # score number color
+    LABEL_H = 66          # P1/P2 title image height
+    LABEL_H_RATIO = 0.09  # title height also capped to this fraction of window height
+
+    def __init__(self, size, game_mode=None,
+                 pause_cb=None, sound_switch_cb=None, fetch_scores_cb=None):
+        """
+            :param game_mode: GameMode.SINGLE shows the skull only;
+                GameMode.DOUBLE shows the skull and the eat icon for both players
+            :param pause_cb: called when the pause button is hit, no arguments
+            :param sound_switch_cb: called when the sound button is toggled, no arguments
+            :param fetch_scores_cb: called every frame to fetch per-player scores,
+                expected to return [(eaten, eat), ...] in player order
+        """
         self.size = size
-        self.sound_on = True
-        self.paused = False
+        # GameMode is defined below in this module, so the default is resolved here
+        self.game_mode = GameMode.SINGLE if game_mode is None else game_mode
+        self.fetch_scores_cb = fetch_scores_cb
 
-        self.pause_btn = IconButton(icon_coloring(icons_dict["pause"], main_color), size=42)
+        self.pause_btn = IconButton(icon_coloring(icons_dict["pause"], main_color),
+                                    size=42, callback=pause_cb)
         self.sound_btn = IconToggleButton(icon_coloring(icons_dict["sound_on"], main_color),
                                           icon_coloring(icons_dict["sound_off"], main_color),
                                           size=46, callback=sound_switch_cb)
 
-        self.resume_btn = Button("RESUME", icon=icons_dict["play"], style="solid")
-        self.menu_btn = Button("MENU", style="ghost", on_light=True)
+        self._kill_icon = None
+        self._eat_icon = None
+        self._p1_label = None
+        self._p2_label = None
+        self.resize(size)
 
-        self._score_icon = None
+    def set_sound(self, sound_on: bool):
+        self.sound_btn.pressed = not sound_on
+
+    def set_game_mode(self, game_mode):
+        self.game_mode = game_mode
+
+    def resize(self, size):
+        self.size = size
+        w, h = size
+        label_h = min(self.LABEL_H, int(h * self.LABEL_H_RATIO))
+        self._p1_label = self._scale_label("P1_title", label_h)
+        self._p2_label = self._scale_label("P2_title", label_h)
+        self._kill_icon = pg.transform.smoothscale(
+            icons_dict["dead_icon"].convert_alpha(),
+            (self.SCORE_ICON_SIZE, self.SCORE_ICON_SIZE))
+        self._eat_icon = pg.transform.smoothscale(
+            icons_dict["eat_icon_v1"].convert_alpha(),
+            (self.SCORE_ICON_SIZE, self.SCORE_ICON_SIZE))
+
+        # bottom corners: sound on the left, pause on the right
+        s = self.sound_btn.size
+        self.sound_btn.set_rect((self.MARGIN, h - s - self.MARGIN, s, s))
+        p = self.pause_btn.size
+        self.pause_btn.set_rect((w - p - self.MARGIN, h - p - self.MARGIN, p, p))
+
+    def _scale_label(self, key, label_h):
+        img = icons_dict[key]
+        aspect = img.get_width() / img.get_height()
+        return pg.transform.smoothscale(img.convert_alpha(), (int(label_h * aspect), label_h))
+
+    def _fetch_scores(self):
+        # fall back to a single zeroed P1 when no data source is available
+        if self.fetch_scores_cb is not None:
+            fetched = self.fetch_scores_cb()
+            if fetched:
+                return fetched
+        return [(0, 0)]
+
+    def _score_width(self, icon, count) -> int:
+        # pixel width of a bare "icon + x N" score (no background)
+        tw, _ = make_font(self.SCORE_FONT_SIZE).size(f"x {count}")
+        return icon.get_width() + 6 + tw
+
+    def _draw_score(self, surface, x, y, row_h, icon, count) -> int:
+        # draw icon + "x N" vertically centered in row_h; returns the score width
+        surface.blit(icon, (x, y + (row_h - icon.get_height()) // 2))
+        text = make_font(self.SCORE_FONT_SIZE).render(f"x {count}", True, self.SCORE_COLOR)
+        surface.blit(text, (x + icon.get_width() + 6,
+                            y + (row_h - text.get_height()) // 2))
+        return self._score_width(icon, count)
+
+    def _player_row_width(self, label, scores) -> int:
+        # total width of a label + score row (for right-alignment)
+        return (label.get_width()
+                + sum(self._score_width(icon, c) for icon, c in scores)
+                + self.SCORE_GAP * len(scores))
+
+    def _draw_player_row(self, surface, x, y, label, scores, label_on_right=False):
+        """Draw one player row, everything vertically centered on the label height.
+
+        P1 order: label then scores; P2 (label_on_right=True) mirrors it:
+        scores then label, so the P2 title sits next to the screen edge.
+        """
+        row_h = label.get_height()
+        cx = x
+        if not label_on_right:
+            surface.blit(label, (cx, y))
+            cx += label.get_width() + self.SCORE_GAP
+            for icon, c in scores:
+                cx += self._draw_score(surface, cx, y, row_h, icon, c) + self.SCORE_GAP
+        else:
+            for icon, c in reversed(scores):
+                cx += self._draw_score(surface, cx, y, row_h, icon, c) + self.SCORE_GAP
+            surface.blit(label, (cx - self.SCORE_GAP, y))
+
+    def handle_events(self, events):
+        # buttons act through callbacks; consumed events are filtered out
+        for event in events:
+            if (self.pause_btn.handle_event(event)
+                    or self.sound_btn.handle_event(event)):
+                events.remove(event)
+        return events
+
+    def draw(self, surface):
+        scores = self._fetch_scores()
+        y = self.MARGIN
+        w, _ = self.size
+
+        # P1 panel (top-left); single mode keeps the skull only
+        p1_scores = [(self._kill_icon, scores[0][0])]
+        if self.game_mode == GameMode.DOUBLE:
+            p1_scores.append((self._eat_icon, scores[0][1]))
+        self._draw_player_row(surface, self.MARGIN, y, self._p1_label, p1_scores)
+
+        # P2 panel (top-right), mirrored; double mode only
+        if self.game_mode == GameMode.DOUBLE and len(scores) > 1:
+            p2_scores = [(self._kill_icon, scores[1][0]), (self._eat_icon, scores[1][1])]
+            row_w = self._player_row_width(self._p2_label, p2_scores)
+            self._draw_player_row(surface, w - self.MARGIN - row_w, y,
+                                  self._p2_label, p2_scores, label_on_right=True)
+
+        # bottom corners
+        self.sound_btn.draw(surface)
+        self.pause_btn.draw(surface)
+
+
+class PauseScreen(GameScreen):
+    # Pause overlay: dark scrim + centered white panel with resume / menu / sound.
+
+    def __init__(self, size, resume_cb=None, menu_cb=None, sound_switch_cb=None):
+        """
+            :param resume_cb: called when RESUME is hit, no arguments
+            :param menu_cb: called when MENU is hit, no arguments
+            :param sound_switch_cb: called when the sound button is toggled, no arguments
+        """
+        self.size = size
+        self.resume_btn = Button("RESUME", icon=icons_dict["play"], style="solid", callback=resume_cb)
+        self.menu_btn = Button("MENU", style="ghost", on_light=True, callback=menu_cb)
+        self.sound_btn = IconToggleButton(icon_coloring(icons_dict["sound_on"], main_color),
+                                          icon_coloring(icons_dict["sound_off"], main_color),
+                                          size=46, callback=sound_switch_cb)
         self._panel_rect = None
         self._panel_title = None
         self._panel_hint = None
         self.resize(size)
 
-    def set_paused(self, paused):
-        self.paused = paused
-
     def set_sound(self, sound_on: bool):
-        self.sound_on = sound_on
         self.sound_btn.pressed = not sound_on
 
     def resize(self, size):
         self.size = size
         w, h = size
-        s = self.pause_btn.size
-        self.pause_btn.set_rect((w - s - 16, 16, s, s))
-        self.sound_btn.set_rect((w - s * 2 - 28, 16, s, s))
-        self._score_icon = pg.transform.smoothscale(
-            icons_dict["eat_icon_v1"].convert_alpha(), (26, 26))
-
-        # pause panel
         pw, ph = min(int(w * 0.78), 380), 250
         self._panel_rect = pg.Rect((w - pw) // 2, (h - ph) // 2, pw, ph)
         btn_w, btn_h = int(pw * 0.62), 52
         bx = self._panel_rect.centerx - btn_w // 2
         self.resume_btn.set_rect((bx, self._panel_rect.y + 100, btn_w, btn_h))
         self.menu_btn.set_rect((bx, self._panel_rect.y + 100 + btn_h + 18, btn_w, btn_h))
+        s = self.sound_btn.size
+        self.sound_btn.set_rect((self._panel_rect.right - s - 16, self._panel_rect.y + 16, s, s))
         self._panel_title = make_font(30).render("PAUSED", True, main_color)
         self._panel_hint = make_font(16).render("PRESS ESC TO RESUME", True, HINT_TEXT)
 
     def handle_events(self, events):
+        # buttons act through callbacks; consumed events are filtered out
         for event in events:
-            if self.paused:
-                if self.resume_btn.handle_event(event):
-                    return "resume"
-                if self.menu_btn.handle_event(event):
-                    return "quit_to_menu"
-            else:
-                if self.pause_btn.handle_event(event):
-                    return "pause"
-                if self.sound_btn.handle_event(event):
-                    return "toggle_sound"
-        return None
+            if (self.resume_btn.handle_event(event)
+                    or self.menu_btn.handle_event(event)
+                    or self.sound_btn.handle_event(event)):
+                events.remove(event)
+        return events
 
-    def draw(self, surface, score=0):
-        # score pill (top-left)
-        text = make_font(20).render(f"x {score}", True, main_color)
-        pad = 9
-        pill_w = pad * 2 + self._score_icon.get_width() + 6 + text.get_width()
-        pill_h = 40
-        pill = pg.Surface((pill_w, pill_h), pg.SRCALPHA)
-        pg.draw.rect(pill, (255, 255, 255, 220), pill.get_rect(), border_radius=pill_h // 2)
-        surface.blit(pill, (16, 16))
-        surface.blit(self._score_icon, (16 + pad, 16 + (pill_h - self._score_icon.get_height()) // 2))
-        surface.blit(text, (16 + pad + self._score_icon.get_width() + 6,
-                            16 + (pill_h - text.get_height()) // 2))
-
-        if self.paused:
-            self._draw_pause_panel(surface)
-        else:
-            self.pause_btn.draw(surface)
-            self.sound_btn.draw(surface)
-
-    def _draw_pause_panel(self, surface):
+    def draw(self, surface):
         w, h = self.size
+
+        # dark scrim over the whole screen
         scrim = pg.Surface((w, h), pg.SRCALPHA)
         scrim.fill((35, 58, 52, 120))
         surface.blit(scrim, (0, 0))
@@ -610,6 +722,7 @@ class HUD(GameScreen):
                      (r.centerx - self._panel_hint.get_width() // 2, r.y + 72))
         self.resume_btn.draw(surface)
         self.menu_btn.draw(surface)
+        self.sound_btn.draw(surface)
 
 
 class PlayerType(IntEnum):
@@ -763,8 +876,14 @@ class MazeGame(GameScreen):
     MAX_MAZE_HEIGHT = 10
 
     def __init__(self, gamemode=GameMode.SINGLE,
-                 size_preset="medium", difficulty="normal", players=None, start_edge=None, end_edge=None):
-        """start edge and end edge: 0-3, 0 for top, clockwise"""
+                 size_preset="medium", difficulty="normal", players=None, start_edge=None, end_edge=None,
+                 pause_cb=None, sound_switch_cb=None, resume_cb=None, menu_cb=None):
+        """start edge and end edge: 0-3, 0 for top, clockwise
+            :param pause_cb: called when the HUD pause button is hit, no arguments
+            :param sound_switch_cb: called when the sound button is toggled, no arguments
+            :param resume_cb: called when the pause screen RESUME button is hit, no arguments
+            :param menu_cb: called when the pause screen MENU button is hit, no arguments
+        """
         # common
         self.gamemode = gamemode
         self.size_preset = size_preset
@@ -802,13 +921,32 @@ class MazeGame(GameScreen):
         if gamemode == GameMode.SINGLE:
             self.players[0].pos = self.maze.start
             self.players[0].pos_next = self.maze.start
-
+        # HUD and pause screen as attributes of the maze game;
+        # created after players so fetch_scores has real data to read
+        self.pause_cb = pause_cb
+        self.sound_switch_cb = sound_switch_cb
+        self.resume_cb = resume_cb
+        self.menu_cb = menu_cb
+        self.hud = HUD(pg.display.get_window_size(),
+                        game_mode=gamemode,
+                        pause_cb=pause_cb,
+                        sound_switch_cb=sound_switch_cb,
+                        fetch_scores_cb=self.fetch_scores)
+        self.pause_screen = PauseScreen(pg.display.get_window_size(),
+                                        resume_cb=resume_cb,
+                                        menu_cb=menu_cb,
+                                        sound_switch_cb=sound_switch_cb)
         game_start = pg.event.Event(pg.USEREVENT + 1,
                                     {'gamemode': gamemode,
                                      'size': (self.field_width, self.field_height),
                                      'difficulty': difficulty})
         pg.event.post(game_start)
 
+    def fetch_scores(self):
+        # HUD info source: per-player (eaten, eat) counts
+        if not self.players:
+            return [(0, 0)]
+        return [(p.eaten, p.eat) for p in self.players]
     def draw_maze(self, surf=None):
         """draw the maze on "self.maze_surf" property."""
         surf = self.maze_surf if surf is None else surf
@@ -862,6 +1000,13 @@ class MazeGame(GameScreen):
         maze_size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
         self.region = ((size[0] - maze_size[0]) / 2, (size[1] - maze_size[1]) / 2)
         self.draw_maze()
+        # sync HUD / pause screen with the new size (they are created after the first resize)
+        hud = getattr(self, 'hud', None)
+        if hud is not None:
+            hud.resize(size)
+        pause_screen = getattr(self, 'pause_screen', None)
+        if pause_screen is not None:
+            pause_screen.resize(size)
 
     def handle_events(self, events):
         for event in events:
@@ -917,7 +1062,11 @@ class GameGameTrans(GameScreen):
                                                size_preset=self.maze1.size_preset,
                                                difficulty=self.maze1.difficulty,
                                                players=self.maze1.players,
-                                               start_edge=self.start_edge)
+                                               start_edge=self.start_edge,
+                                               pause_cb=self.maze1.pause_cb,
+                                               sound_switch_cb=self.maze1.sound_switch_cb,
+                                               resume_cb=self.maze1.resume_cb,
+                                               menu_cb=self.maze1.menu_cb)
 
         # basic surf
         self.surface0 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
@@ -1228,6 +1377,11 @@ if __name__ == '__main__':
             sc = HUD((800, 600))
         elif test_idx == 3:
             sc = GameGameTrans(MazeGame())
+        elif test_idx == 4:
+            sc = HUD((800, 600), game_mode=GameMode.DOUBLE,
+                     fetch_scores_cb=lambda: [(3, 5), (2, 7)])
+        elif test_idx == 5:
+            sc = PauseScreen((800, 600))
         else:
             sc = MazeGame()
         while True:
