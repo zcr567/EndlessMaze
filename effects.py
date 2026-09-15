@@ -8,7 +8,8 @@ from weakref import ref as weakref
 
 import pygame
 
-__all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor", "Shadow", "Fade", "RoundMaskFade"]
+__all__ = ["Linear", "Quad", "ReversedQuad", "DoubleQuad", "ChangeColor", "Shadow", "Fade", "RoundMaskFade",
+           "update_effects"]
 
 _all_effects: list[weakref] = []
 
@@ -218,14 +219,15 @@ class Shadow(Effect):
         super().__init__(surface, *args, **kwargs)
         self._offset = offset
         self._color = color
-        self._shadow_cache = self._generate_shadow()
         self._prev_surf = self._surface.copy()
+        self._shadow_cache = self._generate_shadow()
         self.update(forced=True)
 
     def _generate_shadow(self) -> pygame.Surface:
         """generate a semi transparent shadow surface."""
         shadow_surf = pygame.mask.from_surface(self._surface, 127)
-        shadow_surf = shadow_surf.to_surface(setcolor=self._color, unsetcolor=(0, 0, 0, 0))
+        shadow_surf = shadow_surf.to_surface(setcolor=self._color,
+                                             unsetcolor=(0, 0, 0, 0)).convert_alpha(self._prev_surf)
         return shadow_surf
 
     def update(self, forced=False):
@@ -254,6 +256,7 @@ class Fade(Effect):
 
         self._surface.fill((255, 255, 255, round(self._cur_interpolation.get() * 255)),
                            special_flags=pygame.BLEND_RGBA_MULT)
+        print("s2")
 
 
 class RoundMaskFade(Effect):
@@ -300,14 +303,14 @@ if __name__ == '__main__':
 
     # 测试用的窗口，可以在里面塞各种想要测试的代码
     pygame.init()
-    screen = pygame.display.set_mode((600, 800), pygame.RESIZABLE)
+    screen = pygame.display.set_mode((2000, 1500), pygame.RESIZABLE | pygame.NOFRAME)
     clock = pygame.time.Clock()
 
     color_anim = ChangeColor(screen, end_color=(255, 128, 0), duration=30)
     icon = pygame.transform.smoothscale_by(title, 0.2)
     icon_o = icon.copy()
     shadow_eff = Shadow(icon, (10, 10))
-    fade_anim = RoundMaskFade(icon, duration=60, interpolation=Quad)
+    fade_anim = RoundMaskFade(icon, duration=30, interpolation=Quad)
 
     loopvar = 0
     altvar = 1
@@ -320,19 +323,20 @@ if __name__ == '__main__':
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    pygame.quit()
-                    sys.exit()
-                    pass
+                pass
+                # if event.key == pygame.K_ESCAPE:
+                #     pygame.quit()
+                #     sys.exit()
+                #     pass
 
         # 每循环调用的代码
         screen.fill(screen.get_at((0, 0)))
         update_effects()
 
-        screen.blit(icon, (150, 100))
+        screen.blit(icon, (500, 500))
         # 标题阴影时而正常时而变黑，是因为当ChangeColor不更新时，屏幕不每帧刷新，每次blit不会清理上次的标题，半透明阴影产生重叠
 
-        loopvar = (loopvar + 1) % 180
+        loopvar = (loopvar + 1) % 80
         if loopvar == 0:
             pass
             color_anim = ChangeColor(
@@ -342,12 +346,14 @@ if __name__ == '__main__':
                            random.randint(0, 255)),
                 duration=30)
             color_anim.animate_now()
-        if loopvar == 80:
+        if loopvar == 40:
             altvar = -altvar
             icon = icon_o.copy()
             shadow_eff = Shadow(icon, (10, 10))
-            fade_anim = random.choice((Fade(icon, duration=10, interpolation=Quad),
-                                       RoundMaskFade(icon, duration=10, interpolation=Linear)))
+            # a more fancy demo
+            # fade_anim = random.choice((Fade(icon, duration=10, interpolation=Quad),
+            #                            RoundMaskFade(icon, duration=10, interpolation=Linear)))
+            fade_anim = Fade(icon, duration=80, interpolation=Quad)
             fade_anim.animate_now(initial_phase=1 if altvar == -1 else 0, direction=altvar)
 
         pygame.display.flip()

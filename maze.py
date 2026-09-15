@@ -10,23 +10,23 @@ author: ZCR
 ======================================
 """
 import math
-from random import random, randint, choice
 from hashlib import md5
+from random import random, randint, choice
 
 from vectors import *
 
 V = Vector
 
 DIFFICULTY_PRESETS = {
-    "easy":   None,
+    "easy": None,
     "normal": None,
-    "hard":   None,
+    "hard": None,
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {
-    "small":  (5, 10),
+    "small": (5, 10),
     "medium": (10, 20),
-    "large":  (20, 40),
+    "large": (20, 40),
 }
 
 
@@ -44,6 +44,8 @@ class Maze:
                  size: vec_like = (10, 10),
                  start: vec_like = None,
                  end: vec_like = None,
+                 start_edge=None,
+                 end_edge=None,
                  filepath=None,
                  diff_preset=None):
 
@@ -78,10 +80,13 @@ class Maze:
                 raise FileNotFoundError(f"File '{filepath}' not found")
             return
 
+        self.start_edge = start_edge
+        self.end_edge = end_edge
+
         if start is None:
-            self._start = self._b_select()
+            self._start = self._b_select(start_edge, is_start=True)
             while self._start == self._end:
-                self._start = self._b_select()
+                self._start = self._b_select(start_edge, is_start=True)
         else:
             if self.is_valid_coord(start):
                 self._start = start
@@ -89,9 +94,9 @@ class Maze:
                 raise ValueError("Invalid coordinate for parameter start")
 
         if end is None:
-            self._end = self._b_select()
+            self._end = self._b_select(end_edge, is_end=True)
             while abs(self._start[0] - self._end[0]) + abs(self._start[1] - self._end[1]) < 2:
-                self._start = self._b_select()
+                self._start = self._b_select(end_edge, is_start=True)
         else:
             if self.is_valid_coord(end):
                 self._end = end
@@ -100,6 +105,8 @@ class Maze:
 
         self.set_p(self._start, 5)
         self.generate()
+
+        # print(f"{start_edge} {self.start_edge} {self.end_edge}")
 
     # do NOT change the order of the two lists below
     REPR_CORNER_ENUM = ['┼', '┤', '┬', '┐', '├', '│', '┌', ' ', '┴', '┘', '─', ' ', '└', ' ', ' ', ' ']
@@ -188,6 +195,14 @@ class Maze:
         return r
 
     @property
+    def width(self):
+        return self._width
+
+    @property
+    def height(self):
+        return self._height
+
+    @property
     def start(self):
         return self._start
 
@@ -195,18 +210,28 @@ class Maze:
     def end(self):
         return self._end
 
-    def _b_select(self):
+    def _b_select(self, edge=None, is_start=False, is_end=False):
         """Select a random point on the edge of the maze, and mark it in the _data property. Each point has an equal
         probability to be chosen. This function is used to determine the start and end points of the maze."""
-        t = randint(0, (self._width + self._height) * 2 - 5)
-        if 0 <= t < self._width - 1:  # top edge
+        edge = edge if edge is not None else randint(0, 3)
+        if edge == 0:  # top edge
+            t = randint(1, self.width - 2)
             p = (t, 0)
-        elif self._width - 1 <= t < self._width + self._height - 2:  # right edge
+        elif edge == 1:  # right edge
+            t = randint(self.width, self.width + self.height - 3)
             p = (self._width - 1, t - self._width + 1)
-        elif self._width + self._height - 2 <= t < self._width * 2 + self._height - 3:  # bottom edge
+        elif edge == 2:  # bottom edge
+            t = randint(self.width + self.height - 1, self.width * 2 + self.height - 4)
             p = (t - self._width - self._height + 2, self._height - 1)
-        else:  # left edge
+        elif edge == 3:  # left edge
+            t = randint(self.width * 2 + self.height - 2, self.width * 2 + self.height * 2 - 5)
             p = (0, t - self._height - self._width * 2 + 3)
+        else:
+            raise ValueError(f"Wrong edge value {edge}")
+        if is_start:
+            self.start_edge = edge
+        elif is_end:
+            self.end_edge = edge
         return p
 
     def get_right_path(self):
@@ -401,11 +426,9 @@ class Maze:
                         bp_count += 1
             existing = new
             if bp_count <= self.BRANCH_THR:
-                print("exit branching")
                 break
 
     def generate(self):
-        print("generate() called")
         if len(self._right_path):
             return
         self._gen_right_path()
@@ -416,6 +439,7 @@ class Maze:
 if __name__ == '__main__':
     # a simple save-load test
     import os
+
     maze = Maze()
     print(maze)
     maze.save("maze1.txt")

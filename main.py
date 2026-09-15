@@ -5,8 +5,9 @@ import pygame
 import pygame as pg
 
 from Resources import *
+from effects import *
 # noinspection PyPep8Naming
-from widgets import WelcomeScreen, HUD, GameMode, MazeGame
+from widgets import WelcomeScreen, HUD, GameMode, MazeGame, GameGameTrans, Player
 
 # executable generating command
 # pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
@@ -37,6 +38,7 @@ class Game:
         pg.display.set_caption('EndlessMaze')
         pg.display.set_icon(app_logo)
         self.window_size = pg.display.get_window_size()
+        self.p1, self.p2 = Player(), Player()
 
         # game sound config
         self.sound_on = True
@@ -51,11 +53,39 @@ class Game:
         self.hud = HUD(self.window_size)  # TODO: fill the params after the class is implemented
         self.maze_game: MazeGame | None = None  # will be initialized when start button hit
         self.current_screen = self.welcome
+        self.next_game = None
 
         # game logic related
         self.game_mode = GameMode.SINGLE
         self.maze_size_preset = 'medium'
         self.maze_diff_preset = 'normal'
+
+    def toggle_sound(self):
+        # TODO: complete the function after sounds are prepared
+        print("called toggle_sound()")
+        self.sound_on = not self.sound_on
+
+    def start_single_player(self):
+        print("called start_single_player()")
+        self.maze_game = MazeGame(gamemode=GameMode.SINGLE,
+                                  size_preset=self.maze_size_preset,
+                                  difficulty=self.maze_diff_preset,
+                                  players=[self.p1])
+        self.p1.game = self.maze_game
+        self.current_screen = self.maze_game
+
+    # noinspection PyMethodMayBeStatic
+    def start_double_player(self):
+        # TODO: complete it after two-player mode is implemented
+        print("called start_double_player()")
+
+    def set_difficulty(self, preset: str):
+        print(f"called set_difficulty({preset})")
+        self.maze_diff_preset = preset
+
+    def set_maze_size(self, preset: str):
+        print(f"called set_maze_size({preset})")
+        self.maze_size_preset = preset
 
     def run(self):
         # main loop
@@ -71,36 +101,20 @@ class Game:
                 if event.type == pg.WINDOWSIZECHANGED:
                     self.current_screen.resize(pygame.display.get_window_size())
                 if event.type == pg.USEREVENT + 2:  # game ends
-                    self.start_single_player()
+                    print(self.maze_game)
+                    self.current_screen = GameGameTrans(self.maze_game)
+                    # self.start_single_player()
                     # self.current_screen = self.welcome
+                if event.type == pg.USEREVENT + 3:  # game-game transition ends
+                    self.maze_game = self.current_screen.get_new_game()
+                    self.current_screen = self.maze_game
+                    self.next_game = None
             if self.state != GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
                 self.current_screen.handle_events(events)
+
+            update_effects()
             self.current_screen.draw(self.screen)
             pygame.display.flip()
-
-    def toggle_sound(self):
-        # TODO: complete the function after sounds are prepared
-        print("called toggle_sound()")
-        self.sound_on = not self.sound_on
-
-    def start_single_player(self):
-        print("called start_single_player()")
-        self.current_screen = MazeGame(gamemode=GameMode.SINGLE,
-                                       size_preset=self.maze_size_preset,
-                                       difficulty=self.maze_diff_preset)
-
-    # noinspection PyMethodMayBeStatic
-    def start_double_player(self):
-        # TODO: complete it after two-player mode is implemented
-        print("called start_double_player()")
-
-    def set_difficulty(self, preset: str):
-        print(f"called set_difficulty({preset})")
-        self.maze_diff_preset = preset
-
-    def set_maze_size(self, preset: str):
-        print(f"called set_maze_size({preset})")
-        self.maze_size_preset = preset
 
 
 if __name__ == '__main__':
