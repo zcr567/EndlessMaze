@@ -5,6 +5,7 @@ A simple widget module for pygame first version written by zyw and refactored by
 import random
 from enum import IntEnum, IntFlag
 
+import pygame
 import pygame as pg
 
 from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
@@ -638,7 +639,7 @@ class Player:
         self.maze: Maze = None if self._game is None else self._game.maze
         self.player_type = player_type
         self.pos = pos0
-        self.heading = heading
+        self._heading = heading
         self.size = (0, 0) if self.game is None else (self._game.cell_width * 1.2, self._game.cell_width * 1.2)
 
         # game logic
@@ -650,7 +651,7 @@ class Player:
             self.anim_dict: dict[Cell:Animation] = predator_anim_dict
         else:
             self.anim_dict: dict[Cell:Animation] = prey_anim_dict
-        self.cur_anim: Animation = self.anim_dict[self.heading]
+        self.cur_anim: Animation = self.anim_dict[self._heading]
         if self._game is not None:
             self.cur_anim.set_position(self.pos_to_surf())
         self.disp_state = DispState.IDLE
@@ -669,6 +670,20 @@ class Player:
         self.maze = game.maze
         self.cur_anim.set_position(self.pos_to_surf())
         self.size = (self._game.cell_width * 1.2, self._game.cell_width * 1.2)
+
+    @property
+    def heading(self):
+        return self._heading
+
+    @heading.setter
+    def heading(self, heading):
+        # This should be rewritten if a rotate animation is added
+        self._heading = heading
+        fid = self.cur_anim.get_frame_id()
+        pos = self.cur_anim.get_position()
+        self.cur_anim = self.anim_dict[self._heading]
+        self.cur_anim.set_frame_id(fid)
+        self.cur_anim.set_position(pos)
 
     def pos_to_surf(self, pos=None):
         """return the current position in maze_surf coordinates"""
@@ -689,8 +704,8 @@ class Player:
         if self.disp_state & DispState.MOVING:
             return
         vec = DIR_VECS[direction]
-        if direction != self.heading:
-            self.heading = direction
+        if direction != self._heading:
+            self._heading = direction
             self.disp_state |= DispState.ROTATING
         all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
         if self._is_available(vec):
@@ -723,7 +738,7 @@ class Player:
         if self.disp_state & DispState.ROTATING:
             fid = self.cur_anim.get_frame_id()
             pos = self.cur_anim.get_position()
-            self.cur_anim = self.anim_dict[self.heading]
+            self.cur_anim = self.anim_dict[self._heading]
             self.cur_anim.set_frame_id(fid)
             self.cur_anim.set_position(pos)
             self.disp_state ^= DispState.ROTATING
@@ -757,11 +772,11 @@ class MazeGame(GameScreen):
         side_min, side_max = SIZE_PRESETS[size_preset]
         self.field_width = random.randint(side_min, side_max)
         self.field_height = random.randint(side_min, side_max)
-        diff_kwargs = DIFFICULTY_PRESETS[difficulty] or {}
+
         self.maze = Maze((self.field_width, self.field_height),
-                         **diff_kwargs,
                          start_edge=start_edge,
-                         end_edge=end_edge)
+                         end_edge=end_edge,
+                         diff_preset=difficulty)
         self.inst = self.maze.draw_instructions()
 
         self.start_edge = self.maze.start_edge
@@ -882,17 +897,21 @@ class GameGameTrans(GameScreen):
 
         # basic
         self.maze1 = old_game
-        self.players = old_game.players
+        self.players: list[Player] = old_game.players
         self.end_edge = self.maze1.end_edge
 
         # generate new mase game
         if self.end_edge == 2:
+            self.players[0].heading = Cell.GO_DOWN
             self.start_edge = 0
         elif self.end_edge == 0:
+            self.players[0].heading = Cell.GO_UP
             self.start_edge = 2
         elif self.end_edge == 1:
+            self.players[0].heading = Cell.GO_RIGHT
             self.start_edge = 3
         elif self.end_edge == 3:
+            self.players[0].heading = Cell.GO_LEFT
             self.start_edge = 1
         self.maze2 = self.next_game = MazeGame(gamemode=self.maze1.gamemode,
                                                size_preset=self.maze1.size_preset,
@@ -905,7 +924,6 @@ class GameGameTrans(GameScreen):
         self.surface1 = self.maze1.maze_surf.copy().convert(self.surface0)
         self.surface2 = self.maze2.maze_surf.copy().convert(self.surface0)
         self.path_surf = self.surface0.copy().convert(self.surface0)
-        self.resize(pg.display.get_window_size())
 
         # animation related
         self.surface0.fill(self.maze1.bg_color)
@@ -963,6 +981,12 @@ class GameGameTrans(GameScreen):
         self.surface0 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
         self.surface1 = self.maze1.maze_surf.copy()
         self.surface2 = self.maze2.maze_surf.copy()
+
+        if self._ani_p < 2:
+            self._ani_p = 2
+            self.life = 0
+            for p in self.players:
+                p.game = self.maze2
 
     def _calc_points(self):
         for maze, end in ((self.maze1, self.maze1.maze.end), (self.maze2, self.maze2.maze.start)):
@@ -1122,6 +1146,61 @@ class GameGameTrans(GameScreen):
 
     def get_new_game(self):
         return self.maze2
+
+
+class ManuGameTrans(GameScreen):
+    HALF_DURATION = 20
+
+    def __init__(self, old_screen, color=(0, 0, 0), _manu=None, **game_preset):
+        super().__init__()
+        self.phase = 0
+        self.fid = 0
+        self.surf = pygame.Surface(pygame.display.get_window_size(), pygame.SRCALPHA)
+        self.surf.fill(color)
+        self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION, interpolation=Quad, invert=True)
+        self.anim.animate_now(initial_phase=1, direction=-1)
+        self.old_screen = old_screen
+        if isinstance(old_screen, WelcomeScreen):
+            self.new_sc = MazeGame(**game_preset)
+            try:
+                for p in game_preset["players"]:
+                    p.game = self.new_sc
+            except KeyError:
+                pass
+        else:
+            self.new_sc = _manu
+
+    def resize(self, size: tuple[int, int] | V) -> None:
+        ph, di = self.anim.phase, self.anim.direction
+        self.surf = pygame.Surface(pygame.display.get_window_size())
+        self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION - self.fid, interpolation=Quad, invert=True)
+        self.anim.animate_now(initial_phase=ph, direction=di)
+
+    def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
+        if self.phase == 1 and self.fid == self.HALF_DURATION:
+            if isinstance(self.old_screen, WelcomeScreen):
+                event = pygame.event.Event(pygame.USEREVENT + 4)
+                pygame.event.post(event)
+            else:
+                event = pygame.event.Event(pg.USEREVENT + 4)
+                pygame.event.post(event)
+        return events
+
+    def draw(self, surface: pg.Surface) -> None:
+        if self.phase == 0 and self.fid == self.HALF_DURATION:
+            self.phase = 1
+            self.fid = 0
+            self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION - self.fid, invert=True)
+            self.anim.animate_now()
+        if self.phase == 0:
+            self.old_screen.draw(surface)
+        else:
+            self.new_sc.draw(surface)
+        surface.blit(self.surf, (0, 0))
+        self.fid += 1
+
+    def get_new_screen(self):
+        return self.new_sc
 
 
 if __name__ == '__main__':

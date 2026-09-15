@@ -171,6 +171,13 @@ class Effect:
         else:
             return self._cur_interpolation.get()
 
+    @property
+    def direction(self):
+        if self._cur_interpolation is None:
+            return 0
+        else:
+            return self._cur_interpolation.direction
+
     def animate_now(self, step: int | None = None, initial_phase: int | float = 0, direction: int = 1):
         self._cur_interpolation = self._interpolation(self._duration if step is None else step, initial_phase,
                                                       direction)
@@ -260,7 +267,7 @@ class Fade(Effect):
 
 
 class RoundMaskFade(Effect):
-    def __init__(self, surface, duration=30, center=None, interpolation=Linear):
+    def __init__(self, surface, duration=30, center=None, interpolation=Linear, invert=False):
         super().__init__(surface, duration=duration, interpolation=interpolation)
         w, h = surface.get_size()
         if center is None:
@@ -272,14 +279,23 @@ class RoundMaskFade(Effect):
                           math.sqrt((w - center[0]) ** 2 + (h - center[1]) ** 2)) * 1.2
         self._original = self._surface.copy()
         self._mask_surf = pygame.Surface(self._original.get_size(), pygame.SRCALPHA)
+        self.invert = invert
 
     def update(self):
         super().update()
         if self._cur_interpolation is None:
             return
-        self._mask_surf.fill((255, 255, 255, 0))
-        pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center,
-                           self._cur_interpolation.get() * self._max_r)
+
+        if self.invert:
+            self._mask_surf.fill((0, 0, 0, 0))
+            pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center,
+                               self._cur_interpolation.get() * self._max_r, )
+            m = pygame.mask.from_surface(self._mask_surf, 127)
+            self._mask_surf = m.to_surface(setcolor=(0, 0, 0, 0), unsetcolor=(255, 255, 255, 255))
+        else:
+            self._mask_surf.fill((0, 0, 0, 0))
+            pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center,
+                               self._cur_interpolation.get() * self._max_r)
         self._surface.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_SUB)
         self._surface.blit(self._original, (0, 0))
         self._surface.blit(self._mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
@@ -303,14 +319,14 @@ if __name__ == '__main__':
 
     # 测试用的窗口，可以在里面塞各种想要测试的代码
     pygame.init()
-    screen = pygame.display.set_mode((2000, 1500), pygame.RESIZABLE | pygame.NOFRAME)
+    screen = pygame.display.set_mode((1000, 1000), pygame.RESIZABLE)
     clock = pygame.time.Clock()
 
     color_anim = ChangeColor(screen, end_color=(255, 128, 0), duration=30)
     icon = pygame.transform.smoothscale_by(title, 0.2)
     icon_o = icon.copy()
     shadow_eff = Shadow(icon, (10, 10))
-    fade_anim = RoundMaskFade(icon, duration=30, interpolation=Quad)
+    fade_anim = RoundMaskFade(icon, duration=30, interpolation=Quad, invert=True)
 
     loopvar = 0
     altvar = 1
@@ -323,11 +339,10 @@ if __name__ == '__main__':
                 pygame.quit()
                 sys.exit()
             if event.type == pygame.KEYDOWN:
-                pass
-                # if event.key == pygame.K_ESCAPE:
-                #     pygame.quit()
-                #     sys.exit()
-                #     pass
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+                    pass
 
         # 每循环调用的代码
         screen.fill(screen.get_at((0, 0)))

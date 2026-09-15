@@ -7,7 +7,7 @@ import pygame as pg
 from Resources import *
 from effects import *
 # noinspection PyPep8Naming
-from widgets import WelcomeScreen, HUD, GameMode, MazeGame, GameGameTrans, Player
+from widgets import WelcomeScreen, HUD, GameMode, MazeGame, GameGameTrans, Player, ManuGameTrans
 
 # executable generating command
 # pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
@@ -67,12 +67,10 @@ class Game:
 
     def start_single_player(self):
         print("called start_single_player()")
-        self.maze_game = MazeGame(gamemode=GameMode.SINGLE,
-                                  size_preset=self.maze_size_preset,
-                                  difficulty=self.maze_diff_preset,
-                                  players=[self.p1])
-        self.p1.game = self.maze_game
-        self.current_screen = self.maze_game
+        self.current_screen = ManuGameTrans(self.welcome, gamemode=GameMode.SINGLE,
+                                            size_preset=self.maze_size_preset,
+                                            difficulty=self.maze_diff_preset,
+                                            players=[self.p1])
 
     # noinspection PyMethodMayBeStatic
     def start_double_player(self):
@@ -109,6 +107,18 @@ class Game:
                     self.maze_game = self.current_screen.get_new_game()
                     self.current_screen = self.maze_game
                     self.next_game = None
+                if event.type == pg.USEREVENT + 4:  # from menu to game
+                    print("event received")
+                    self.maze_game = self.current_screen.get_new_screen()
+                    self.current_screen = self.maze_game
+                    self.next_game = None
+                if event.type == pg.USEREVENT + 5:
+                    print("event received")
+                    self.current_screen = self.welcome
+                if event.type == pg.KEYDOWN:
+                    if (event.key == pg.K_BACKSPACE and not isinstance(self.current_screen, WelcomeScreen)
+                            and not isinstance(self.current_screen, ManuGameTrans)):
+                        self.current_screen = ManuGameTrans(self.current_screen, _manu=self.welcome)
             if self.state != GameState.PAUSED:  # Maybe cause deadlock. (not occurred yet)
                 self.current_screen.handle_events(events)
 

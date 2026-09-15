@@ -18,9 +18,9 @@ from vectors import *
 V = Vector
 
 DIFFICULTY_PRESETS = {
-    "easy": None,
-    "normal": None,
-    "hard": None,
+    "easy": [2,],
+    "normal": [5,],
+    "hard": [7,],
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {
@@ -47,7 +47,7 @@ class Maze:
                  start_edge=None,
                  end_edge=None,
                  filepath=None,
-                 diff_preset=None):
+                 diff_preset="normal"):
 
         self._size = size
         self._start = start
@@ -61,10 +61,14 @@ class Maze:
         # hyperparameters for branching
         self.diff_preset = diff_preset
         # TODO: find a set of parameters below, to implement difficulty preset function
-        self.PATH_LENGTH_UNIFORMITY = 2  # larger than 1, controls the length uniformity of the right path's segments
-        self.BRANCH_THR = math.sqrt(self._width * self._height) // 2  # controls branch nesting depth
-        self.BRANCH_EXTEND_PROB = 1 - 1 / (self._width + self._height)  # controls average branch length
-        self.MAKING_BRANCH_PROB = .8  # controls branch numbers
+        self.PATH_LENGTH_UNIFORMITY = DIFFICULTY_PRESETS[diff_preset][0]
+        # larger than 1, controls the length uniformity of the right path's segments
+        self.BRANCH_THR = math.sqrt(self._width * self._height) // 2
+        # controls branch nesting depth
+        self.BRANCH_EXTEND_PROB = 1 - 1 / (self._width + self._height)
+        # controls average branch length
+        self.MAKING_BRANCH_PROB = .8
+        # controls branch numbers
 
         if filepath is not None:
             try:
@@ -286,7 +290,7 @@ class Maze:
     def _bend(self):
         # randomly choose a path segment to be bent
         # ln_raw = choice(self._ls_paths)
-        ln_raw = choice(self._ls_paths[:len(self._ls_paths) // self.PATH_LENGTH_UNIFORMITY])
+        ln_raw = choice(self._ls_paths[:max(len(self._ls_paths) // self.PATH_LENGTH_UNIFORMITY, 1)])
         ln = ln_raw.copy()
         failed_count = 0
         while len(ln) < 2:
