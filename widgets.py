@@ -526,7 +526,7 @@ class HUD(GameScreen):
     LABEL_H_RATIO = 0.10  # title height also capped to this fraction of window height
     TIMER_FONT_SIZE = 36  # in-game timer text size (centered on top)
     TIMER_COLOR = (255, 255, 255)  # timer text color, consistent with score numbers
-    PTS_FONT_SIZE = 24  # "pts N" score display font size
+    PTS_FONT_SIZE = 32  # "pts N" score display font size
     PTS_COLOR = (255, 255, 255)  # pts text color, consistent with timer / score
     PTS_GAP = 12  # gap between the P1 label (or its scores) and the pts text
 
@@ -559,6 +559,7 @@ class HUD(GameScreen):
         self._p1_label = None
         self._p2_label = None
         self._timer_surf = None
+        self._timer_width0 = None
         self.resize(size)
 
     def set_sound(self, sound_on: bool):
@@ -583,7 +584,8 @@ class HUD(GameScreen):
         p = self.pause_btn.size
         self.pause_btn.set_rect((w - p - self.MARGIN, h - p - self.MARGIN, p, p))
 
-    def _scale_label(self, key, label_h):
+    @staticmethod
+    def _scale_label(key, label_h):
         img = icons_dict[key]
         aspect = img.get_width() / img.get_height()
         return pg.transform.smoothscale(img.convert_alpha(), (int(label_h * aspect), label_h))
@@ -656,11 +658,14 @@ class HUD(GameScreen):
 
     def _draw_timer(self, surface, label_h):
         # top-center timer; rendered every frame, so it stays in sync with the Timer
+
         text = make_font(self.TIMER_FONT_SIZE).render(
             self._fetch_time_str(), True, self.TIMER_COLOR)
         self._timer_surf = text
         w, _ = self.size
-        x = (w - text.get_width()) // 2
+        if self._timer_width0 is None:
+            self._timer_width0 = text.get_width()
+        x = (w - self._timer_width0) // 2
         y = self.MARGIN + (label_h - text.get_height()) // 2
         surface.blit(text, (x, y))
 
@@ -1077,13 +1082,13 @@ class MazeGame(GameScreen):
         """update the screen size variables, call every time the screen size changes"""
         self.maze_surf = pg.Surface(size, pg.SRCALPHA)
         # reserve HUD_HUD_TOP at the top so the maze does not overlap the HUD
-        HUD_TOP = 100  # P1 label (80) + margin (8) + small gap
-        avail_h = size[1] - HUD_TOP
+        hud_top = 100  # P1 label (80) + margin (8) + small gap
+        avail_h = size[1] - hud_top
         self.cell_width = min(size[0] / (self.field_width * 1.2), avail_h / (self.field_height * 1.2))
         self.maze_edge_width = max(int(self.cell_width // 6), 1)
         maze_size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
-        # center horizontally; vertically offset by HUD_TOP so the maze sits below the HUD
-        self.region = ((size[0] - maze_size[0]) / 2, HUD_TOP + (avail_h - maze_size[1]) / 2)
+        # center horizontally; vertically offset by hud_top so the maze sits below the HUD
+        self.region = ((size[0] - maze_size[0]) / 2, hud_top + (avail_h - maze_size[1]) / 2)
         self.draw_maze()
         # sync HUD / pause screen with the new size (they are created after the first resize)
         hud = getattr(self, 'hud', None)
@@ -1126,6 +1131,7 @@ class GameGameTrans(GameScreen):
     STATS_LINE_GAP = 12  # vertical gap between the three stat lines
     STATS_ENTER_DURATION = 20  # frames for the fly-in entrance animation
     STATS_FLY_DISTANCE = 120  # pixels the stats travel during the fly-in
+    STATS_PADDING = 40  # padding from screen edge when calc pos
 
     def __init__(self, old_game: MazeGame):
         """A fancy transition between two maze games."""
@@ -1149,6 +1155,7 @@ class GameGameTrans(GameScreen):
         elif self.end_edge == 3:
             self.players[0].heading = Cell.GO_LEFT
             self.start_edge = 1
+
         self.maze2 = self.next_game = MazeGame(gamemode=self.maze1.gamemode,
                                                size_preset=self.maze1.size_preset,
                                                difficulty=self.maze1.difficulty,
@@ -1278,6 +1285,7 @@ class GameGameTrans(GameScreen):
 
     def _draw_path_1(self):
         self.path_surf = pg.Surface(self.surface0.get_size(), pg.SRCALPHA).convert_alpha(self.surface0)
+        # noinspection DuplicatedCode
         p1 = self.p1[0] + (self.p1[1] - self.p1[0]) * self.intp1.get()
         p2 = self.p2[0] + (self.p2[1] - self.p2[0]) * self.intp1.get()
         w, h = pg.display.get_window_size()
@@ -1301,8 +1309,6 @@ class GameGameTrans(GameScreen):
         pg.draw.line(self.path_surf, MazeGame.MAZE_EDGE_COLOR, p2, p2 - self.direction * self.line_length,
                      self.line_width)
         w = self.line_width // 2
-        if self.pre_p3 == 0:
-            pass
         Shadow(self.path_surf, (w, w))
 
     def _draw_path_2(self):
@@ -1364,7 +1370,7 @@ class GameGameTrans(GameScreen):
             self._draw_path_0()
             self.surface0.blit(self.path_surf, (0, 0))
             self.surface0.blit(self.surface1, self.offset)
-            self.players[0].directly_draw(self.surface0, self.p0[0])
+            self.players[0].directly_draw(self.surface0, self.p0[0], (self.p_size0,) * 2)
             if self.life >= self.PHASE_TIMES[0] // 4:
                 self.intp0.update()
                 self.offset = V(int(-self.intp0.get() * self.max_offset * self.direction[0]),
@@ -1386,7 +1392,7 @@ class GameGameTrans(GameScreen):
             else:
                 surface.blit(self.surface0, (0, 0))
                 surface.blit(self.path_surf, (0, 0))
-                self.players[0].directly_draw(surface, self.p0[0])
+                self.players[0].directly_draw(surface, self.p0[0], (self.p_size0,) * 2)
                 self._draw_stats(surface)
         elif self._ani_p == 2:
             self.surface0.fill(self._end_color)
@@ -1405,19 +1411,27 @@ class GameGameTrans(GameScreen):
             surface.blit(self.surface0, (0, 0))
 
     # font sizes for the three stat lines (time / score / prompt)
-    TIME_FONT_SIZE = 36
-    SCORE_FONT_SIZE = 28
-    PROMPT_FONT_SIZE = 24
 
     def _build_stats(self):
         """Pre-render the three stat lines onto self._stats_surf and compute the final
         blit position; called once on the first stats frame."""
         time_str = self.maze1.timer.get_str()
-        score_str = f"score: {self.maze1.players[0].score}"
-        prompt_str = "press any key to continue"
-        fonts = [make_font(self.TIME_FONT_SIZE),
-                 make_font(self.SCORE_FONT_SIZE),
-                 make_font(self.PROMPT_FONT_SIZE)]
+        score_str = f"Total score: {self.maze1.players[0].score}"
+        prompt_str = "exit: <Backspace>  continue: <other>"
+        prop_font_size = sum(pygame.display.get_window_size()) // 100
+        total_w = make_font(prop_font_size).size(prompt_str)
+        sc_size = prop_font_size
+        tm_size = prop_font_size
+        while make_font(sc_size).size(score_str) < total_w:
+            sc_size += 1
+        # while make_font(sc_size).size(score_str) > total_w:
+        #     sc_size -= .1
+        while make_font(tm_size).size(time_str) < total_w:
+            tm_size += 1
+        # while make_font(tm_size).size(time_str) > total_w:
+        #     tm_size -= .1
+        fonts = [make_font(tm_size), make_font(sc_size), make_font(prop_font_size)]
+
         lines = [time_str, score_str, prompt_str]
 
         # render each line, then use the widest surface width as target_w
@@ -1428,7 +1442,7 @@ class GameGameTrans(GameScreen):
         total_h = sum(heights) + self.STATS_LINE_GAP * (len(lines) - 1)
 
         # blit the three lines, each centered within target_w, onto one transparent surface
-        stats_surf = pg.Surface((target_w, total_h), pg.SRCALPHA)
+        stats_surf = pg.Surface((target_w + 3, total_h + 3), pg.SRCALPHA)
         y_cursor = 0
         for i, r in enumerate(rendered):
             stats_surf.blit(r, ((target_w - r.get_width()) // 2, y_cursor))
@@ -1437,6 +1451,7 @@ class GameGameTrans(GameScreen):
 
         # compute the three spaces formed by the two parallel lines
         sw, sh = pg.display.get_window_size()
+        # noinspection DuplicatedCode
         a1 = self.p1[0] + (self.p1[1] - self.p1[0]) * self.intp1.get()
         a2 = self.p2[0] + (self.p2[1] - self.p2[0]) * self.intp1.get()
         if self.end_edge == 0:
@@ -1469,12 +1484,13 @@ class GameGameTrans(GameScreen):
         # clamp so the text block stays within the largest space and on-screen
         top_x = max(bx, min(top_x, bx + bw - target_w))
         top_y = max(by, min(top_y, by + bh - total_h))
-        top_x = max(0, min(top_x, sw - target_w))
-        top_y = max(0, min(top_y, sh - total_h))
+        top_x = max(self.STATS_PADDING, min(top_x, sw - target_w - self.STATS_PADDING))
+        top_y = max(self.STATS_PADDING, min(top_y, sh - total_h - self.STATS_PADDING))
         self._stats_pos = V(int(top_x), int(top_y))
 
         # start the fly-in interpolation
         self._stats_enter = ReversedQuad(self.STATS_ENTER_DURATION)
+        Shadow(self._stats_surf, (3, 3))
 
     def _draw_stats(self, surface):
         """Blit the stats block; handles the fly-in entrance and hands opacity over to

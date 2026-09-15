@@ -10,7 +10,7 @@ from effects import *
 from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, ManuGameTrans
 
 # executable generating command
-# pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
+# pyinstaller -F --add-data "Resources;Resources" -w -i project_icon.ico main.py
 
 pg.init()
 INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
