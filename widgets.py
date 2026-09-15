@@ -8,7 +8,7 @@ from enum import IntEnum, IntFlag
 import pygame
 import pygame as pg
 
-from Resources import icons_dict, main_font_path, title as title_surf, Animation, predator_anim_dict, prey_anim_dict
+from Resources import *
 from effects import Linear, Quad, DoubleQuad, ReversedQuad, Shadow, ChangeColor, RoundMaskFade
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
 from utils import adjust_color, Timer
@@ -429,20 +429,20 @@ class WelcomeScreen(GameScreen):
         self.bg = vertical_gradient(
             size,
             adjust_color(palette[-3],
-                         hue_offset=10,
+                         hue_offset=5,
                          saturation_factor=0.8),
             adjust_color(palette[-3],
-                         hue_offset=-10,
+                         hue_offset=-5,
                          saturation_factor=0.8,
                          brightness_factor=0.95))
         self._render_deco()
 
         # title: up to 86% of the width and 13% of the height, keeps aspect
-        aspect = title_surf.get_width() / title_surf.get_height()
+        aspect = title.get_width() / title.get_height()
         title_h = min(int(h * 0.13), int(w * 0.86 / aspect))
         title_w = int(title_h * aspect)
-        self.title_img = pg.transform.smoothscale(title_surf.convert_alpha(), (title_w, title_h))
-        shadow = title_surf.copy().convert_alpha()
+        self.title_img = pg.transform.smoothscale(title.convert_alpha(), (title_w, title_h))
+        shadow = title.copy().convert_alpha()
         shadow.fill((45, 85, 75, 255), special_flags=pg.BLEND_RGBA_MULT)
         self.title_shadow = pg.transform.smoothscale(shadow, (title_w, title_h))
         self.title_shadow.set_alpha(60)
@@ -819,9 +819,11 @@ class Player:
             return
         vec = DIR_VECS[direction]
         if direction != self._heading:
+            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
             self._heading = direction
             self.disp_state |= DispState.ROTATING
         all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
+
         if self._is_available(vec):
             self.pos_next += vec
         else:
@@ -1270,6 +1272,7 @@ class GameGameTrans(GameScreen):
             for event in events:
                 if event.type == pg.KEYDOWN or event.type == pg.MOUSEBUTTONDOWN:
                     if not self.pre_p3:
+                        pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
                         self.color_anim.animate_now()
                         self.pre_p3 = 1
                         self.life = 0

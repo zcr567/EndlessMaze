@@ -7,9 +7,11 @@ import pygame
 from utils import resource_path
 from vectors import Vector, vec_like, DIR_ENUMS
 
-__all__ = ["Animation", "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title", "main_font_path"]
+__all__ = ["Animation", "predator_anim_dict", "prey_anim_dict", "icons_dict", "app_logo", "title", "main_font_path",
+           "rotate_sound"]
 
 resource_root = resource_path("Resources\\")
+pygame.mixer.init()
 
 if __name__ == '__main__':
     resource_root = resource_path("\\")
@@ -111,6 +113,9 @@ title = pygame.image.load(resource_root + "Images\\icons\\title.png")
 
 # load the main font
 main_font_path = resource_root + "Fonts\\main.ttf"
+pygame.mixer.music.load(resource_root + "Sounds\\bgmusic.ogg")
+rotate_sound = pygame.mixer.Sound(resource_root + "Sounds\\player_rotate.ogg")
+
 
 if __name__ == '__main__':
     # A simple test for resource loading module
