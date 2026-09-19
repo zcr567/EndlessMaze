@@ -1,7 +1,6 @@
 import os
 from enum import IntEnum
 
-import pygame
 import pygame as pg
 
 from Resources import *
@@ -37,7 +36,7 @@ class Game:
         # initialize game window
         self.state = GameState.MENU
         self.clock = pg.time.Clock()
-        self.screen = pg.display.set_mode(INIT_SCREEN_SIZE, pygame.RESIZABLE)
+        self.screen = pg.display.set_mode(INIT_SCREEN_SIZE, pg.RESIZABLE)
         pg.display.set_caption('EndlessMaze')
         pg.display.set_icon(app_logo)
         self.window_size = pg.display.get_window_size()
@@ -69,10 +68,10 @@ class Game:
         print("called toggle_sound()")
         self.sound_on = not self.sound_on
         if self.sound_on:
-            pygame.mixer.music.set_volume(self.BG_MUSIC_VOLUME)
-            pygame.mixer.music.play(-1)
+            pg.mixer.music.set_volume(self.BG_MUSIC_VOLUME)
+            pg.mixer.music.play(-1)
         else:
-            pygame.mixer.music.fadeout(500)
+            pg.mixer.music.fadeout(500)
         if self.maze_game is not None:
             self.maze_game.hud.set_sound(self.sound_on)
             self.maze_game.pause_screen.set_sound(self.sound_on)
@@ -112,7 +111,7 @@ class Game:
         # called by the pause screen resume button / ESC
         if self.state == GameState.PAUSED:
             self.state = GameState.PLAYING
-            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 6))
+            pg.event.post(pg.event.Event(pg.USEREVENT + 6))
             print("called resume_game()")
 
     def quit_to_menu(self):
@@ -133,7 +132,7 @@ class Game:
                     pg.quit()
                     raise SystemExit
                 if event.type == pg.WINDOWSIZECHANGED:
-                    self.current_screen.resize(pygame.display.get_window_size())
+                    self.current_screen.resize(pg.display.get_window_size())
                 if event.type == pg.USEREVENT + 2:  # game ends
                     print(self.maze_game)
                     self.state = GameState.GAME_GAME_TRANSITION
@@ -186,7 +185,7 @@ class Game:
                 self.maze_game.hud.draw(self.screen)
             elif self.state == GameState.PAUSED:
                 self.maze_game.pause_screen.draw(self.screen)
-            pygame.display.flip()
+            pg.display.flip()
 
 
 if __name__ == '__main__':
