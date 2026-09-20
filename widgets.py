@@ -5,8 +5,8 @@ A simple widget module for pygame first version written by zyw and refactored by
 import math
 import random
 from enum import IntEnum, IntFlag
+from functools import lru_cache
 
-import pygame
 import pygame as pg
 
 from Resources import *
@@ -103,60 +103,51 @@ class Button(ButtonBase):
         self.icon = icon
         self.style = style
         self.on_light = on_light
+        self.caches = []
 
-    def draw(self, surface):
+    def build_cache(self):
+        # order: disabled, unpressed, hovered, pressed
+        self.caches = []
         radius = self.rect.height // 2
+        content_color = None
         if self.style == "solid":
-            if not self.enabled:
-                fill = palette[4]
-            elif self.pressed:
-                fill = palette[3]
-            elif self._hovered():
-                fill = palette[5]
-            else:
-                fill = main_color
-            pg.draw.rect(surface, fill, self.rect, border_radius=radius)
+            colors = [palette[4], main_color, palette[5], palette[3]]
             content_color = palette[-1]
         elif self.on_light:
-            # ghost button on a white panel: a light mist-teal fill keeps it visible
-            if self.pressed:
-                fill = (215, 230, 225)
-            elif self._hovered():
-                fill = (225, 240, 235)
-            else:
-                fill = (235, 240, 240)
-            pg.draw.rect(surface, fill, self.rect, border_radius=radius)
+            colors = [(215, 230, 225), (235, 240, 240), (225, 240, 235), (215, 230, 225)]
             content_color = main_color
-        else:  # ghost
-            if not self.enabled:
-                alpha = 110
-                content_color = DISABLED_TEXT
-            elif self.pressed:
-                alpha = 200
-                content_color = palette[4]
-            elif self._hovered():
-                alpha = 255
-                content_color = palette[5]
-            else:
-                alpha = 225
-                content_color = palette[4]
-            pill = pg.Surface(self.rect.size, pg.SRCALPHA)
-            pg.draw.rect(pill, (255, 255, 255, alpha), pill.get_rect(), border_radius=radius)
-            surface.blit(pill, self.rect)
+        else:
+            colors = [(255, 255, 255, alpha) for alpha in (110, 225, 255, 200)]
+            content_color = palette[4]
+        for color in colors:
+            self.caches.append(pg.Surface(self.rect.size, pg.SRCALPHA))
+            pg.draw.rect(self.caches[-1], color, (0, 0, *self.rect.size), border_radius=radius)
+            parts = []
+            if self.icon is not None:
+                icon_size = int(self.rect.height * 0.46)
+                parts.append(pg.transform.smoothscale(self.icon, (icon_size, icon_size)))
+            if self.text:
+                parts.append(make_font(int(self.rect.height * 0.40)).render(self.text, True, content_color))
+            gap = 10
+            total_w = sum(p.get_width() for p in parts) + gap * (len(parts) - 1)
+            x = (self.rect.width - total_w) // 2
+            for p in parts:
+                self.caches[-1].blit(p, (x, (self.rect.height - p.get_height()) // 2))
+                x += p.get_width() + gap
 
-        # lay out icon + text as one centered group
-        parts = []
-        if self.icon is not None:
-            icon_size = int(self.rect.height * 0.46)
-            parts.append(pg.transform.smoothscale(self.icon, (icon_size, icon_size)))
-        if self.text:
-            parts.append(make_font(int(self.rect.height * 0.40)).render(self.text, True, content_color))
-        gap = 10
-        total_w = sum(p.get_width() for p in parts) + gap * (len(parts) - 1)
-        x = self.rect.centerx - total_w // 2
-        for p in parts:
-            surface.blit(p, (x, self.rect.centery - p.get_height() // 2))
-            x += p.get_width() + gap
+    def set_rect(self, rect):
+        super().set_rect(rect)
+        self.build_cache()
+
+    def draw(self, surface):
+        if not self.enabled:
+            surface.blit(self.caches[0], self.rect)
+        elif self.pressed:
+            surface.blit(self.caches[3], self.rect)
+        elif self._hovered():
+            surface.blit(self.caches[2], self.rect)
+        else:
+            surface.blit(self.caches[1], self.rect)
 
 
 class IconButton(ButtonBase):
@@ -176,21 +167,23 @@ class IconButton(ButtonBase):
         self.pressed = False
         self.enabled = enabled
 
-    def draw(self, surface):
-        if self.pressed:
-            alpha = 200
-        elif self._hovered():
-            alpha = 255
-        else:
-            alpha = 220
-
-        # noinspection DuplicatedCode
-        circle = pg.Surface((self.size, self.size), pg.SRCALPHA)
-        pg.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
-        surface.blit(circle, self.rect)
+        # buffer
+        # order: unpressed, hovered, pressed
+        self.surf_cache = []
         icon_size = int(self.size * 0.56)
         icon = pg.transform.smoothscale(self.icon, (icon_size, icon_size))
-        surface.blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
+        for color in [(255, 255, 255, 220), (255, 255, 255, 255), (255, 255, 255, 200)]:
+            self.surf_cache.append(pg.Surface((self.size, self.size), pg.SRCALPHA))
+            pg.draw.circle(self.surf_cache[-1], color, (self.size // 2, self.size // 2), self.size // 2)
+            self.surf_cache[-1].blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
+
+    def draw(self, surface):
+        if self.pressed:
+            surface.blit(self.surf_cache[2], self.rect)
+        elif self._hovered():
+            surface.blit(self.surf_cache[1], self.rect)
+        else:
+            surface.blit(self.surf_cache[0], self.rect)
 
 
 class IconToggleButton(IconButton):
@@ -210,6 +203,21 @@ class IconToggleButton(IconButton):
             self.group = f"btn_{len(self._group_dict)}"
             self._group_dict[self.group] = [self]
         self.allow_all_release = allow_all_release
+
+        # caches
+        # order: unpressed, hovered, pressed
+        self.surf_cache = []
+        for color in [(255, 255, 255, 175), (255, 255, 255, 255), (255, 255, 255, 220)]:
+            self.surf_cache.append(pg.Surface((self.size, self.size), pg.SRCALPHA))
+            pg.draw.circle(self.surf_cache[-1], color, (self.size // 2, self.size // 2), self.size // 2)
+
+        icon_size = int(self.size * 0.56)
+        if self.icon_pressed is not None:
+            _icon = pg.transform.smoothscale(icon_pressed, (icon_size, icon_size))
+            self.surf_cache[2].blit(_icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
+        _icon = pg.transform.smoothscale(icon, (icon_size, icon_size))
+        self.surf_cache[0].blit(_icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
+        self.surf_cache[1].blit(_icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
 
     def handle_event(self, event):
         if not self.enabled:
@@ -233,25 +241,6 @@ class IconToggleButton(IconButton):
                         self.callback()
                         return True
         return False
-
-    def draw(self, surface):
-        if self.pressed and self.icon_pressed is None:
-            alpha = 175
-        elif self._hovered():
-            alpha = 255
-        else:
-            alpha = 220
-
-        # noinspection DuplicatedCode
-        circle = pg.Surface((self.size, self.size), pg.SRCALPHA)
-        pg.draw.circle(circle, (255, 255, 255, alpha), (self.size // 2, self.size // 2), self.size // 2)
-        surface.blit(circle, self.rect)
-        icon_size = int(self.size * 0.56)
-        if self.pressed and self.icon_pressed is not None:
-            icon = pg.transform.smoothscale(self.icon_pressed, (icon_size, icon_size))
-        else:
-            icon = pg.transform.smoothscale(self.icon, (icon_size, icon_size))
-        surface.blit(icon, (self.rect.centerx - icon_size // 2, self.rect.centery - icon_size // 2))
 
 
 class OptionSelector:
@@ -418,6 +407,7 @@ class WelcomeScreen(GameScreen):
                     pg.draw.line(self._deco_surf, line_color, (x, y), (x, y + int(cw)), edge_w)
                 if row % 2 == 0 and col % 2 == 0 and edge_w > 2:
                     pg.draw.circle(self._deco_surf, line_color, (x, y), edge_w // 2)
+        self.bg.blit(self._deco_surf, (0, 0))
 
     def _update_title(self):
         # Advance the title float animation by one frame.
@@ -505,8 +495,7 @@ class WelcomeScreen(GameScreen):
     def draw(self, surface):
         self._update_title()
         surface.blit(self.bg, (0, 0))
-        surface.blit(self._deco_surf, (0, 0))
-        # title float: a gentle vertical bobbing driven by title_intp
+
         amp = self.title_intp.get()
         float_y = int(round(amp * self.TITLE_FLOAT_AMP))
         surface.blit(self.title_shadow, (self.title_pos[0] + 3, self.title_pos[1] + 5 + float_y))
@@ -867,7 +856,7 @@ class Player:
             return
         vec = DIR_VECS[direction]
         if direction != self._heading:
-            pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
+            pg.event.post(pg.event.Event(pg.USEREVENT + 7, {"sound": rotate_sound}))
             self._heading = direction
             self.disp_state |= DispState.ROTATING
         all_headings = [V(1, 0), V(0, -1), V(-1, 0), V(0, 1)]
@@ -1119,7 +1108,7 @@ class MazeGame(GameScreen):
         predator, prey = versus_pair(self.players)
         predator.pos = predator.pos_next = V(self.maze.start)
         predator.heading = VERSUS_ENTRANCE_HEADINGS.get(self.start_edge, Cell.GO_DOWN)
-        prey.pos = prey.pos_next = pick_prey_spawn(self.maze, self.maze.start)
+        prey.pos = prey.pos_next = pick_prey_spawn(self.maze)
         for p in (predator, prey):
             p.disp_state = DispState.IDLE
             p.movement_vec = V(0, 0)
@@ -1171,7 +1160,7 @@ class MazeGame(GameScreen):
         self.maze_edge_width = max(int(self.cell_width // 6), 1)
         maze_size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
         self.region = ((size[0] - maze_size[0]) / 2, (size[1] - maze_size[1]) / 2)
-        self.timer_pos_x = (pygame.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
+        self.timer_pos_x = (pg.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
         self.draw_maze()
         # sync HUD / pause screen with the new size (they are created after the first resize)
         hud = getattr(self, 'hud', None)
@@ -1257,7 +1246,7 @@ class MazeGame(GameScreen):
             surf.blit(body, (0, 0))
             self._time_str = text
             self._time_surf = surf
-            self.timer_pos_x = (pygame.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
+            self.timer_pos_x = (pg.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
             # DO NOT write the "Shadow..." statement outside the if-else clause, or unexpected bad thing will happen
             # the reason is not clear now, we may find out the other day
             Shadow(self._time_surf, self.TIME_SHADOW_OFFSET)
@@ -1524,7 +1513,7 @@ class GameGameTrans(GameScreen):
             for event in events:
                 if event.type == pg.KEYDOWN or event.type == pg.MOUSEBUTTONDOWN:
                     if not self.pre_p3 and self.life > 30:
-                        pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
+                        pg.event.post(pg.event.Event(pg.USEREVENT + 7, {"sound": rotate_sound}))
                         self.color_anim.animate_now()
                         # fade the stats out together with the background color change
                         if self._stats_surf is not None and self._stats_fade is None:
@@ -1624,7 +1613,7 @@ class GameGameTrans(GameScreen):
         time_str = self.maze1.timer.get_str()
         score_str = f"Total score: {self.prey.score}"
         prompt_str = "exit: <Backspace>  continue: <other>"
-        prop_font_size = sum(pygame.display.get_window_size()) // 100
+        prop_font_size = sum(pg.display.get_window_size()) // 100
         total_w = make_font(prop_font_size).size(prompt_str)
         sc_size = prop_font_size
         tm_size = prop_font_size
@@ -1728,13 +1717,13 @@ class BlackScreenTrans(GameScreen):
     def __init__(self, old_screen, color=(0, 0, 0), _manu=None, **game_preset):
         self.phase = 0
         self.fid = 0
-        self.surf = pygame.Surface(pygame.display.get_window_size(), pygame.SRCALPHA)
+        self.surf = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
         self.surf.fill(color)
         self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION, interpolation=Quad, invert=True)
         self.anim.animate_now(initial_phase=1, direction=-1)
         self.old_screen = old_screen
         if _manu:
-            _manu.resize(pygame.display.get_window_size())
+            _manu.resize(pg.display.get_window_size())
         if isinstance(old_screen, WelcomeScreen):
             self.new_sc = MazeGame(**game_preset)
             try:
@@ -1749,18 +1738,18 @@ class BlackScreenTrans(GameScreen):
         ph, di = self.anim.phase, self.anim.direction
         self.old_screen.resize(size)
         self.new_sc.resize(size)
-        self.surf = pygame.Surface(pygame.display.get_window_size())
+        self.surf = pg.Surface(pg.display.get_window_size())
         self.anim = RoundMaskFade(self.surf, duration=self.HALF_DURATION - self.fid, interpolation=Quad, invert=True)
         self.anim.animate_now(initial_phase=ph, direction=di)
 
     def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
         if self.phase == 1 and self.fid == self.HALF_DURATION:
             if type(self.old_screen) is WelcomeScreen:
-                event = pygame.event.Event(pygame.USEREVENT + 4)
-                pygame.event.post(event)
+                event = pg.event.Event(pg.USEREVENT + 4)
+                pg.event.post(event)
             else:
-                event = pygame.event.Event(pg.USEREVENT + 5)
-                pygame.event.post(event)
+                event = pg.event.Event(pg.USEREVENT + 5)
+                pg.event.post(event)
         return events
 
     def draw(self, surface: pg.Surface) -> None:
@@ -2152,7 +2141,7 @@ def versus_pair(players):
     return predator, prey
 
 
-def pick_prey_spawn(maze, avoid):
+def pick_prey_spawn(maze):
     """(two-player mode) pick the prey's spawning cell: random, but never on the predator's cell
     nor on the exit, and far enough from the predator to leave it a chance to run."""
     # blocked = (tuple(avoid), tuple(maze.end))
@@ -2259,7 +2248,7 @@ class VersusDeathTrans(GameScreen):
         self.frozen.blit(catcher, catcher.get_rect(center=(catcher_pos[0], catcher_pos[1])))
         self.gray = pg.transform.grayscale(self.frozen)
 
-        self.ghost = pygame.transform.smoothscale(icons_dict["ghost"], (self.maze1.cell_width * 0.8,) * 2)
+        self.ghost = pg.transform.smoothscale(icons_dict["ghost"], (self.maze1.cell_width * 0.8,) * 2)
         self.ghost_pos = cell_to_surf(self.maze1, self._ghost_cell)
 
     def _build_prompt(self):
