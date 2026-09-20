@@ -7,9 +7,13 @@ from Resources import *
 from effects import *
 # noinspection PyPep8Naming
 from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, ManuGameTrans
+# (two-player mode) the ghost transition of the versus mode and its random role assignment
+from widgets import RecordsScreen, VersusDeathTrans, VersusResult, assign_versus_roles
+# (history) the results of the games played so far, kept in records.json next to the game
+from records import Records
 
 # executable generating command
-# pyinstaller -F --add-data "Resources;Resources" -w -i project_icon.ico main.py
+# pyinstaller -F --add-data "resource;resource" -w -i project_icon.ico main.py
 
 pg.init()
 INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
@@ -54,6 +58,14 @@ class Game:
                                      single_player_cb=self.start_single_player,
                                      double_player_cb=self.start_double_player,
                                      diff_set_cb=self.set_difficulty)
+        # (two-player mode) the mode is playable now, so its menu entry drops the "SOON" tag
+        self.welcome.double_btn.text = "TWO PLAYER"
+        # (limited vision) the vision row of the menu reports to the game
+        self.welcome.vision_selector.callback = self.set_vision
+        # (history) the records button opens the list, and the list itself is kept on disk
+        self.records = Records()
+        self.records_screen = RecordsScreen(self.records, back_cb=self.close_records)
+        self.welcome.records_btn.callback = self.open_records
         self.maze_game: MazeGame | None = None  # will be initialized when start button hit
         self.current_screen = self.welcome
         self.next_game = None
@@ -62,6 +74,28 @@ class Game:
         self.game_mode = GameMode.SINGLE
         self.maze_size_preset = 'medium'
         self.maze_diff_preset = 'normal'
+        self.limited_vision = False  # (limited vision) off until the menu switches it on
+
+    def open_records(self):
+        """(history) show the records of the games played so far"""
+        print("called open_records()")
+        self.records_screen.resize(pg.display.get_window_size())
+        self.current_screen = self.records_screen
+        self.state = GameState.MENU
+
+    def close_records(self):
+        """(history) back to the main menu"""
+        self.current_screen = self.welcome
+        self.state = GameState.MENU
+
+    def set_vision(self, preset: str):
+        """(limited vision) the menu hands over "full" or "limited". MazeGame carries the mode as a
+        class default, so every maze built from now on already has it - including the one the menu
+        transition builds a few lines before the match really starts, which used to show the whole
+        map for its first frames."""
+        print(f"called set_vision({preset})")
+        self.limited_vision = preset == "limited"
+        MazeGame.limited_vision = self.limited_vision
 
     def toggle_sound(self):
         # TODO: complete the function after sounds are prepared
@@ -72,6 +106,7 @@ class Game:
             pg.mixer.music.play(-1)
         else:
             pg.mixer.music.fadeout(500)
+
         if self.maze_game is not None:
             self.maze_game.hud.set_sound(self.sound_on)
             self.maze_game.pause_screen.set_sound(self.sound_on)
@@ -91,6 +126,15 @@ class Game:
     def start_double_player(self):
         # TODO: complete it after two-player mode is implemented
         print("called start_double_player()")
+        assign_versus_roles(self.p1, self.p2)
+        self.current_screen = ManuGameTrans(self.welcome, gamemode=GameMode.DOUBLE,
+                                            size_preset=self.maze_size_preset,
+                                            difficulty=self.maze_diff_preset,
+                                            players=[self.p1, self.p2],
+                                            pause_cb=self.pause_game,
+                                            sound_switch_cb=self.toggle_sound,
+                                            resume_cb=self.resume_game,
+                                            menu_cb=self.quit_to_menu)
 
     def set_difficulty(self, preset: str):
         print(f"called set_difficulty({preset})")
@@ -104,7 +148,6 @@ class Game:
         # called by the HUD pause button / ESC while playing
         if self.state == GameState.PLAYING and self.current_screen is self.maze_game:
             self.state = GameState.PAUSED
-            self.maze_game.pause_timing()
             print("called pause_game()")
 
     def resume_game(self):
@@ -137,8 +180,15 @@ class Game:
                     print(self.maze_game)
                     self.state = GameState.GAME_GAME_TRANSITION
                     self.current_screen = GameGameTrans(self.maze_game)
+                    # (history) a finished solo maze is written down with its time and its score
+                    if (isinstance(self.maze_game, MazeGame)
+                            and self.maze_game.gamemode == GameMode.SINGLE):
+                        self.records.add_single(self.maze_game)
                     # self.start_single_player()
                     # self.current_screen = self.welcome
+                if event.type == pg.USEREVENT + 8:  # (two-player mode) the prey was caught
+                    self.state = GameState.GAME_GAME_TRANSITION
+                    self.current_screen = VersusDeathTrans(self.maze_game)
                 if event.type == pg.USEREVENT + 3:  # game-game transition ends
                     self.maze_game = self.current_screen.get_new_game()
                     self.current_screen = self.maze_game
@@ -154,6 +204,13 @@ class Game:
                 if event.type == pg.USEREVENT + 5:  # from game to menu
                     self.current_screen = self.welcome
                     self.state = GameState.MENU
+                    # (two-player score) leaving a versus match settles it: the higher score wins
+                    if (isinstance(self.maze_game, MazeGame)
+                            and self.maze_game.gamemode == GameMode.DOUBLE
+                            and not getattr(self.maze_game, "versus_settled", False)):
+                        self.current_screen = VersusResult(self.maze_game, self.welcome)
+                        # (history) and a versus match is written down the moment it is settled
+                        self.records.add_versus(self.maze_game, self.current_screen.winner_text())
                 if event.type == pg.USEREVENT + 6:
                     if type(self.current_screen) is MazeGame:
                         self.current_screen.resume_timing()

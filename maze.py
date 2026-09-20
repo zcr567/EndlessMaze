@@ -18,9 +18,9 @@ from vectors import *
 V = Vector
 
 DIFFICULTY_PRESETS = {
-    "easy": [2, ],
-    "normal": [5, ],
-    "hard": [7, ],
+    "easy": [2,],
+    "normal": [5,],
+    "hard": [7,],
 }
 # size presets: (min side length, max side length);
 SIZE_PRESETS = {
@@ -57,6 +57,9 @@ class Maze:
         self._data = [[Cell.EMPTY for _ in range(self._width)] for _ in range(self._height)]
         self._ls_paths: list[list[tuple[int, int]]] = []  # path segments used for bending
         self._right_path = []
+        # one-way doors: passages that may only be walked the way their arrow points
+        self.one_way_doors: list[tuple[vec_like, vec_like]] = []
+        self._one_way_blocked: set[tuple] = set()
 
         # hyperparameters for branching
         self.diff_preset = diff_preset
@@ -173,6 +176,7 @@ class Maze:
                     inst[row - 1][col - 1] |= 1
                     inst[row - 1][col + 1] |= 4
                     inst[row - 1][col] = 2
+        self._open_one_way_doors(inst)
         return inst
 
     def __repr__(self):
@@ -442,6 +446,124 @@ class Maze:
         self._gen_right_path()
         self._gen_branch()
         self._ls_paths = []  # clean up the space
+        self._gen_one_way_doors()
+
+
+    # -----------------------------------------------------------------------
+    # one-way doors
+    #
+    # A door is a wall between two neighbouring cells that the maze already connects around: the
+    # wall is opened, but the new passage may only be walked the way its arrow points. Two things
+    # follow from that, and both are what makes a door fun instead of unfair:
+    #   * every original passage is left untouched, so the plain path of the maze always stays
+    #     open as the alternative - a door is a choice (usually a shortcut), never the only way;
+    #   * walking a door the wrong way can always be undone by taking that plain path back, so a
+    #     door can neither seal a dead end nor trap anybody: the whole maze stays reachable in
+    #     every direction.
+    # -----------------------------------------------------------------------
+
+    ONE_WAY_DOOR_CELLS = 90      # one door per that many cells of maze area
+    ONE_WAY_DOOR_MAX = 4         # never hand out more than that many doors for one maze
+    ONE_WAY_DOOR_MIN_SAVING = 4  # a door has to shorten the way to the exit by at least that much
+    ONE_WAY_DOOR_SPACING = 4     # doors keep that much Manhattan distance from each other
+
+    def blocks_one_way(self, cell: vec_like, target: vec_like) -> bool:
+        """whether stepping from "cell" to "target" is forbidden, because it would walk a one-way
+        passage against the direction of its arrow."""
+        return (tuple(cell), tuple(target)) in self._one_way_blocked
+
+    def _tree_adjacency(self) -> dict[tuple, list[tuple]]:
+        """the passages of the maze as an undirected graph, built from the direction every cell
+        stores for the neighbour it was reached from."""
+        adj = {(x, y): [] for y in range(self._height) for x in range(self._width)}
+        for y in range(self._height):
+            for x in range(self._width):
+                direction = self._data[y][x]
+                if direction in DIR_VECS:
+                    parent = (x - DIR_VECS[direction][0], y - DIR_VECS[direction][1])
+                    if self.is_valid_coord(parent):
+                        adj[(x, y)].append(parent)
+                        adj[parent].append((x, y))
+        return adj
+
+    @staticmethod
+    def _bfs_dist(adj: dict[tuple, list[tuple]], source: tuple) -> dict[tuple, int]:
+        """distance from "source" to every cell of an adjacency graph, breadth first"""
+        dist = {source: 0}
+        queue = [source]
+        while queue:
+            cur = queue.pop(0)
+            for nxt in adj[cur]:
+                if nxt not in dist:
+                    dist[nxt] = dist[cur] + 1
+                    queue.append(nxt)
+        return dist
+
+    def _gen_one_way_doors(self):
+        """pick the one-way doors: walls between cells that the maze already connects, where the
+        door would shorten the way to the exit, spread out over the maze."""
+        self.one_way_doors = []
+        self._one_way_blocked = set()
+        adj = self._tree_adjacency()
+        d_end = self._bfs_dist(adj, tuple(self._end))
+        candidates = []
+        for y in range(self._height):
+            for x in range(self._width):
+                for vec in (V(1, 0), V(0, 1)):  # every wall is looked at exactly once
+                    here, there = (x, y), (x + vec[0], y + vec[1])
+                    if not self.is_valid_coord(there) or there in adj[here]:
+                        continue  # outside the maze, or already an open passage
+                    if here not in d_end or there not in d_end:
+                        continue  # a pocket the maze never carved: a door into it would trap
+                    saving = d_end[there] - d_end[here]
+                    if saving >= self.ONE_WAY_DOOR_MIN_SAVING:
+                        candidates.append((saving, here, there))
+                    elif -saving >= self.ONE_WAY_DOOR_MIN_SAVING:
+                        candidates.append((-saving, there, here))
+        candidates.sort(key=lambda candidate: -candidate[0])
+
+        count = min(self.ONE_WAY_DOOR_MAX,
+                    max(1, self._width * self._height // self.ONE_WAY_DOOR_CELLS))
+        for saving, here, there in candidates:
+            if there == tuple(self._start) or here == tuple(self._end):
+                continue
+            if any(min(abs(here[0] - door[0][0]) + abs(here[1] - door[0][1]),
+                       abs(there[0] - door[0][0]) + abs(there[1] - door[0][1]),
+                       abs(here[0] - door[1][0]) + abs(here[1] - door[1][1]),
+                       abs(there[0] - door[1][0]) + abs(there[1] - door[1][1]))
+                   < self.ONE_WAY_DOOR_SPACING for door in self.one_way_doors):
+                continue
+            self.one_way_doors.append((V(here), V(there)))
+            self._one_way_blocked.add((there, here))
+            if len(self.one_way_doors) >= count:
+                break
+
+    def _open_one_way_doors(self, inst: list[list[int]]):
+        """open the wall every door sits in, exactly the way an ordinary passage is opened"""
+        for here, there in self.one_way_doors:
+            self._open_passage(inst, there, DIR_ENUMS[V(there) - V(here)])
+
+    @staticmethod
+    def _open_passage(inst: list[list[int]], cell: vec_like, direction: Cell):
+        """open the wall on the side "direction" of a cell points at, the same instruction code
+        draw_instructions writes for a passage of the maze path."""
+        row, col = 2 * cell[1] + 1, 2 * cell[0] + 1
+        if direction == Cell.GO_RIGHT:
+            inst[row - 1][col - 1] |= 8
+            inst[row + 1][col - 1] |= 2
+            inst[row][col - 1] = 2
+        elif direction == Cell.GO_UP:
+            inst[row + 1][col - 1] |= 1
+            inst[row + 1][col + 1] |= 4
+            inst[row + 1][col] = 2
+        elif direction == Cell.GO_LEFT:
+            inst[row - 1][col + 1] |= 8
+            inst[row + 1][col + 1] |= 2
+            inst[row][col + 1] = 2
+        elif direction == Cell.GO_DOWN:
+            inst[row - 1][col - 1] |= 1
+            inst[row - 1][col + 1] |= 4
+            inst[row - 1][col] = 2
 
 
 if __name__ == '__main__':

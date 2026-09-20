@@ -116,6 +116,7 @@ main_font_path = resource_root + "Fonts\\main.ttf"
 pygame.mixer.music.load(resource_root + "Sounds\\bgmusic.ogg")
 rotate_sound = pygame.mixer.Sound(resource_root + "Sounds\\player_rotate.ogg")
 
+
 if __name__ == '__main__':
     # A simple test for resource loading module
 

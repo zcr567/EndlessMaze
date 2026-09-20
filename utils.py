@@ -2,9 +2,9 @@
 Low-level tool functions that all modules may use.
 Author: ZCR
 """
-import sys
 import time
 from os.path import abspath
+import sys
 
 
 # resource path

@@ -263,6 +263,8 @@ class Fade(Effect):
 
         self._surface.fill((255, 255, 255, round(self._cur_interpolation.get() * 255)),
                            special_flags=pygame.BLEND_RGBA_MULT)
+        print("s2")
+
 
 class RoundMaskFade(Effect):
     def __init__(self, surface, duration=30, center=None, interpolation=Linear, invert=False):
@@ -278,6 +280,11 @@ class RoundMaskFade(Effect):
         self._original = self._surface.copy()
         self._mask_surf = pygame.Surface(self._original.get_size(), pygame.SRCALPHA)
         self.invert = invert
+
+    @property
+    def radius(self):
+        """current radius of the reveal mask, in pixels; 0 while the effect is not animating"""
+        return self.phase * self._max_r
 
     def update(self):
         super().update()
