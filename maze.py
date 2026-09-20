@@ -63,7 +63,6 @@ class Maze:
 
         # hyperparameters for branching
         self.diff_preset = diff_preset
-        # TODO: find a set of parameters below, to implement difficulty preset function
         self.PATH_LENGTH_UNIFORMITY = DIFFICULTY_PRESETS[diff_preset][0]
         # larger than 1, controls the length uniformity of the right path's segments
         self.BRANCH_THR = math.sqrt(self._width * self._height) // 2

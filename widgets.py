@@ -1581,7 +1581,7 @@ class GameGameTrans(GameScreen):
                 self._draw_stats(surface)  # stats fading out via the Fade effect
                 if self.next_game.gamemode == GameMode.DOUBLE:
                     self.predator.directly_draw(surface,
-                                                p + self.direction * (self.chase_intp.get() * self.line_length), p_size)
+                                                p - self.direction * (self.chase_intp.get() * self.line_length), p_size)
                     self.prey.directly_draw(surface,
                                             p + self.direction * (self.escape_intp.get() * self.line_length * 2),
                                             p_size)
@@ -1927,7 +1927,7 @@ class RecordsScreen(GameScreen):
         self.size = pg.display.get_window_size()
         self.life = 0
         self.pos = (0, 0)
-        self.clear_btn = Button("CLEAR", style="solid", callback=self.clear)
+        self.clear_btn = Button("CLEAR RECORDS", style="solid", callback=self.clear)
         self._bg = None
         self._panel = None
         self.resize(self.size)

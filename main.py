@@ -110,6 +110,7 @@ class Game:
 
     def start_single_player(self):
         print("called start_single_player()")
+        self.reset_players()
         self.current_screen = BlackScreenTrans(self.welcome, gamemode=GameMode.SINGLE,
                                                size_preset=self.maze_size_preset,
                                                difficulty=self.maze_diff_preset,
@@ -122,6 +123,7 @@ class Game:
     # noinspection PyMethodMayBeStatic
     def start_double_player(self):
         print("called start_double_player()")
+        self.reset_players()
         assign_versus_roles(self.p1, self.p2)
         self.current_screen = BlackScreenTrans(self.welcome, gamemode=GameMode.DOUBLE,
                                                size_preset=self.maze_size_preset,
@@ -139,6 +141,14 @@ class Game:
     def set_maze_size(self, preset: str):
         print(f"called set_maze_size({preset})")
         self.maze_size_preset = preset
+
+    def reset_players(self):
+        self.p1.score = 0
+        self.p2.score = 0
+        self.p1.eaten = 0
+        self.p2.eaten = 0
+        self.p1.eat = 0
+        self.p2.eat = 0
 
     def pause_game(self):
         # called by the HUD pause button / ESC while playing

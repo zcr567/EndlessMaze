@@ -1,96 +1,70 @@
+11424e4ebe7df161c1e23db17b9e7084
 {
  "version": 1,
  "entries": [
   {
-   "mode": "versus",
-   "winner": "P1 WINS",
-   "scores": [
-    320,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:31"
+   "mode": "single",
+   "time": "00:01:590",
+   "score": 1504,
+   "size": "10x7",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:38"
   },
   {
-   "mode": "versus",
-   "winner": "P1 WINS",
-   "scores": [
-    320,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:31"
+   "mode": "single",
+   "time": "00:02:977",
+   "score": 925,
+   "size": "6x5",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:38"
   },
   {
-   "mode": "versus",
-   "winner": "P1 WINS",
-   "scores": [
-    320,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:30"
+   "mode": "single",
+   "time": "00:02:964",
+   "score": 733,
+   "size": "7x6",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:38"
   },
   {
-   "mode": "versus",
-   "winner": "DRAW",
-   "scores": [
-    0,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:30"
+   "mode": "single",
+   "time": "00:09:311",
+   "score": 518,
+   "size": "5x10",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:37"
   },
   {
-   "mode": "versus",
-   "winner": "DRAW",
-   "scores": [
-    0,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:30"
+   "mode": "single",
+   "time": "00:02:860",
+   "score": 386,
+   "size": "7x6",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:37"
   },
   {
-   "mode": "versus",
-   "winner": "DRAW",
-   "scores": [
-    0,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:27"
+   "mode": "single",
+   "time": "00:02:611",
+   "score": 159,
+   "size": "5x8",
+   "difficulty": "easy",
+   "at": "2026-09-20 21:37"
   },
   {
-   "mode": "versus",
-   "winner": "DRAW",
-   "scores": [
-    0,
-    0
-   ],
-   "deaths": [
-    0,
-    0
-   ],
-   "at": "2026-09-20 18:27"
+   "mode": "single",
+   "time": "00:17:773",
+   "score": 1171,
+   "size": "11x13",
+   "difficulty": "normal",
+   "at": "2026-09-20 21:33"
+  },
+  {
+   "mode": "single",
+   "time": "00:15:185",
+   "score": 1135,
+   "size": "14x10",
+   "difficulty": "normal",
+   "at": "2026-09-20 21:28"
   }
  ]
 }
