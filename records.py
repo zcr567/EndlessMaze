@@ -1,5 +1,5 @@
 """
-(history) the results of the games played so far.
+the results of the games played so far.
 
 Every finished solo maze and every settled versus match is put on top of this list, and the list is
 kept in "records.json" next to the game, so that it survives a restart. A missing, empty or
@@ -24,7 +24,7 @@ def default_path():
 
 
 class Records:
-    """(history) the games played so far, newest first, backed by a json file."""
+    """the games played so far, newest first, backed by a json file."""
 
     VERSION = 1
     MAX_ENTRIES = 60     # how many games are remembered at all
@@ -35,7 +35,7 @@ class Records:
         self.entries = []
         self.load()
 
-    # ---------------------------------------------------------------- reading
+    # reading
     def load(self):
         """read the file; anything unreadable simply counts as an empty history"""
         try:
@@ -58,7 +58,7 @@ class Records:
         except OSError:
             return False
 
-    # ---------------------------------------------------------------- writing
+    # writing
     def add(self, entry):
         """put one result on top of the list and keep the file up to date"""
         entry.setdefault("at", time.strftime("%Y-%m-%d %H:%M"))
@@ -68,7 +68,7 @@ class Records:
         return entry
 
     def add_single(self, game):
-        """(history) a finished solo maze: its time, its score and the maze it was played on"""
+        """a finished solo maze: its time, its score and the maze it was played on"""
         return self.add({"mode": "single",
                          "time": game.timer.get_str(),
                          "score": int(game.players[0].score) if game.players else 0,
@@ -76,7 +76,7 @@ class Records:
                          "difficulty": game.difficulty})
 
     def add_versus(self, game, winner):
-        """(history) a settled versus match: who won it, and what the two players scored"""
+        """a settled versus match: who won it, and what the two players scored"""
         players = list(game.players)
         return self.add({"mode": "versus",
                          "winner": winner,
@@ -88,7 +88,7 @@ class Records:
         self.entries = []
         return self.save()
 
-    # ------------------------------------------------------------- looking at it
+    # looking at it
     def shown(self, count=None):
         """the entries the records screen lists, newest first"""
         count = self.SHOWN_ENTRIES if count is None else count
@@ -103,7 +103,8 @@ class Records:
         scores = [int(entry.get("score", 0)) for entry in self.of_mode("single")]
         return max(scores) if scores else None
 
-    def row_text(self, entry):
+    @staticmethod
+    def row_text(entry):
         """one line of the records screen for one entry"""
         when = entry.get("at", "")
         if entry.get("mode") == "versus":

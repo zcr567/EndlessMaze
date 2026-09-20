@@ -263,7 +263,6 @@ class Fade(Effect):
 
         self._surface.fill((255, 255, 255, round(self._cur_interpolation.get() * 255)),
                            special_flags=pygame.BLEND_RGBA_MULT)
-        print("s2")
 
 
 class RoundMaskFade(Effect):

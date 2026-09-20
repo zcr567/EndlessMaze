@@ -2,20 +2,95 @@
  "version": 1,
  "entries": [
   {
-   "mode": "single",
-   "time": "00:28:920",
-   "score": 4589,
-   "size": "18x17",
-   "difficulty": "normal",
-   "at": "2026-09-20 13:12"
+   "mode": "versus",
+   "winner": "P1 WINS",
+   "scores": [
+    320,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:31"
   },
   {
-   "mode": "single",
-   "time": "00:08:328",
-   "score": 2036,
-   "size": "16x12",
-   "difficulty": "normal",
-   "at": "2026-09-20 13:11"
+   "mode": "versus",
+   "winner": "P1 WINS",
+   "scores": [
+    320,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:31"
+  },
+  {
+   "mode": "versus",
+   "winner": "P1 WINS",
+   "scores": [
+    320,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:30"
+  },
+  {
+   "mode": "versus",
+   "winner": "DRAW",
+   "scores": [
+    0,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:30"
+  },
+  {
+   "mode": "versus",
+   "winner": "DRAW",
+   "scores": [
+    0,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:30"
+  },
+  {
+   "mode": "versus",
+   "winner": "DRAW",
+   "scores": [
+    0,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:27"
+  },
+  {
+   "mode": "versus",
+   "winner": "DRAW",
+   "scores": [
+    0,
+    0
+   ],
+   "deaths": [
+    0,
+    0
+   ],
+   "at": "2026-09-20 18:27"
   }
  ]
 }

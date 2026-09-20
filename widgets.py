@@ -10,9 +10,7 @@ import pygame
 import pygame as pg
 
 from Resources import *
-from effects import Linear, Quad, DoubleQuad, ReversedQuad, Shadow, ChangeColor, RoundMaskFade
-# (transition stats) the fade-out of the three stat lines uses the existing Fade effect
-from effects import Fade
+from effects import Linear, Quad, DoubleQuad, ReversedQuad, Fade, Shadow, ChangeColor, RoundMaskFade
 from maze import Maze, SIZE_PRESETS, DIFFICULTY_PRESETS
 from utils import adjust_color, Timer
 # noinspection PyPep8Naming
@@ -361,7 +359,9 @@ class WelcomeScreen(GameScreen):
                  single_player_cb=None,
                  double_player_cb=None,
                  size_set_cb=None,
-                 diff_set_cb=None):
+                 diff_set_cb=None,
+                 vision_set_cb=None,
+                 open_rec_cb=None):
         self.size = size
 
         # decorative faint maze behind the menu
@@ -374,15 +374,13 @@ class WelcomeScreen(GameScreen):
                                           icon_coloring(icons_dict["sound_off"], main_color),
                                           size=46, callback=sound_switch_cb)
         self.single_btn = Button("SINGLE PLAYER", icon=icons_dict["play"], style="solid", callback=single_player_cb)
-        self.double_btn = Button("TWO PLAYER - SOON", style="ghost", callback=double_player_cb)
-        # (history) the records screen is opened by the game, like the vision row below
-        self.records_btn = Button("RECORDS", style="ghost")
+        self.double_btn = Button("TWO PLAYER", style="ghost", callback=double_player_cb)
+        self.records_btn = Button("RECORDS", style="ghost", callback=open_rec_cb)
 
         # maze option selectors; option keys follow the maze preset dictionaries
         self.size_selector = OptionSelector("SIZE", list(SIZE_PRESETS), index=1, callback=size_set_cb)
         self.diff_selector = OptionSelector("DIFFICULTY", list(DIFFICULTY_PRESETS), index=1, callback=diff_set_cb)
-        # (limited vision) a third option row; the game wires its callback, like the two above
-        self.vision_selector = OptionSelector("VISION", list(VISION_PRESETS), index=0)
+        self.vision_selector = OptionSelector("VISION", list(VISION_PRESETS), index=0, callback=vision_set_cb)
         self._card_rect = pg.Rect(0, 0, 10, 10)
 
         self.bg = None
@@ -476,13 +474,11 @@ class WelcomeScreen(GameScreen):
         top = self._card_rect.bottom + gap
         self.single_btn.set_rect((cx - btn_w // 2, top, btn_w, btn_h))
         self.double_btn.set_rect((cx - btn_w // 2, top + btn_h + gap, btn_w, btn_h))
-        # (limited vision) the vision row sits right under the two mode buttons
         self.vision_selector.set_rect(
             (cx - btn_w // 2, self.double_btn.rect.bottom + gap, btn_w, row_h))
 
         s = self.sound_btn.size
         self.sound_btn.set_rect((w - s - 22, 22, s, s))
-        # (history) the records button shares the top row with the sound button
         rec_w = min(int(w * 0.16), 150)
         self.records_btn.set_rect((w - s - 22 - rec_w - 12, 22, rec_w, s))
 
@@ -520,11 +516,10 @@ class WelcomeScreen(GameScreen):
         card = pg.Surface(self._card_rect.size, pg.SRCALPHA)
         pg.draw.rect(card, (255, 255, 255, 150), card.get_rect(), border_radius=22)
         surface.blit(card, self._card_rect)
+
         self.size_selector.draw(surface)
         self.diff_selector.draw(surface)
-        # (limited vision) the vision row is drawn right under the two mode buttons
         self.vision_selector.draw(surface)
-
         self.double_btn.draw(surface)
         self.single_btn.draw(surface)
         self.sound_btn.draw(surface)
@@ -548,7 +543,7 @@ class HUD(GameScreen):
                  pause_cb=None, sound_switch_cb=None, fetch_scores_cb=None):
         """
             :param game_mode: GameMode.SINGLE shows the skull only;
-                GameMode.DOUBLE shows the skull and the eat icon for both players
+                "GameMode.DOUBLE" shows the skull and the eat icon for both players
             :param pause_cb: called when the pause button is hit, no arguments
             :param sound_switch_cb: called when the sound button is toggled, no arguments
             :param fetch_scores_cb: called every frame to fetch per-player scores,
@@ -614,7 +609,8 @@ class HUD(GameScreen):
         p = self.pause_btn.size
         self.pause_btn.set_rect((w - p - self.MARGIN, h - p - self.MARGIN, p, p))
 
-    def _scale_label(self, key, label_h):
+    @staticmethod
+    def _scale_label(key, label_h):
         img = icons_dict[key]
         aspect = img.get_width() / img.get_height()
         return pg.transform.smoothscale(img.convert_alpha(), (int(label_h * aspect), label_h))
@@ -766,9 +762,6 @@ class PauseScreen(GameScreen):
 class PlayerType(IntEnum):
     SINGLE = 0
     PREDATOR = 1
-    prey = 2
-    # (two-player mode) upper-case alias of "prey", so both roles of the versus mode read alike;
-    # it is the very same member as "prey"
     PREY = 2
 
 
@@ -841,7 +834,7 @@ class Player:
         self.cur_anim.set_position(pos)
 
     def set_player_type(self, player_type):
-        """(two-player mode) switch this player's role: swap the animation set and keep the
+        """switch this player's role: swap the animation set and keep the
         current frame and position."""
         self.player_type = player_type
         self.anim_dict = predator_anim_dict if player_type == PlayerType.PREDATOR else prey_anim_dict
@@ -930,7 +923,6 @@ class Player:
 class MazeGame(GameScreen):
     MAZE_EDGE_COLOR = (255, 255, 255)
     BG_COLORS = ((204, 128, 204), (108, 150, 200), (200, 175, 64), (100, 204, 100))
-    # (limited vision) the menu switches this on for the games it starts
     limited_vision = False
     MAX_MAZE_WIDTH = 10
     MAX_MAZE_HEIGHT = 10
@@ -950,6 +942,8 @@ class MazeGame(GameScreen):
             :param menu_cb: called when the pause screen MENU button is hit, no arguments
         """
         # common
+        self._time_str = None
+        self._versus_over = False
         self.gamemode = gamemode
         self.size_preset = size_preset
         self.difficulty = difficulty
@@ -972,25 +966,26 @@ class MazeGame(GameScreen):
         self.region = V(0, 0)
         self.cell_width = 0
         self.maze_edge_width = 0
-        self.resize(pg.display.get_window_size())
         self.timer = Timer()
+        self._time_surf = None
+        self.time_surface()
+        self.timer_pos_x = 0
 
         # game logic related
         self.players = []
         if players is None:
-            if gamemode == GameMode.SINGLE:
-                self.players.append(Player(self, pos0=self.maze.start))
-            elif gamemode == GameMode.DOUBLE:
-                pass
+            self.players.append(Player(self, pos0=self.maze.start))
+            if gamemode == GameMode.DOUBLE:
+                self.place_versus_players()
         else:
             self.players = players
         if gamemode == GameMode.SINGLE:
             self.players[0].pos = self.maze.start
             self.players[0].pos_next = self.maze.start
+
         elif gamemode == GameMode.DOUBLE:  # (two-player mode) predator on the entrance, prey at random
             self.place_versus_players()
-        # HUD and pause screen as attributes of the maze game;
-        # created after players so fetch_scores has real data to read
+
         self.pause_cb = pause_cb
         self.sound_switch_cb = sound_switch_cb
         self.resume_cb = resume_cb
@@ -1021,6 +1016,8 @@ class MazeGame(GameScreen):
                                         resume_cb=resume_cb,
                                         menu_cb=menu_cb,
                                         sound_switch_cb=sound_switch_cb)
+        self.resize(pg.display.get_window_size())
+
         game_start = pg.event.Event(pg.USEREVENT + 1,
                                     {'gamemode': gamemode,
                                      'size': (self.field_width, self.field_height),
@@ -1077,7 +1074,7 @@ class MazeGame(GameScreen):
 
     # (one-way doors) marker hyperparameters
     DOOR_COLOR = (255, 214, 120)  # amber, so a one-way passage stands out from the white walls
-    DOOR_SIZE_RATIO = 0.42        # arrow length, as a fraction of the cell width
+    DOOR_SIZE_RATIO = 0.42  # arrow length, as a fraction of the cell width
 
     def draw_one_way_doors(self, surf=None):
         """(one-way doors) draw an arrow in every one-way passage, pointing the only way it may be
@@ -1095,7 +1092,7 @@ class MazeGame(GameScreen):
             pg.draw.line(surf, self.DOOR_COLOR, mid - direction * size, head,
                          width=max(2, int(size * 0.34)))
             pg.draw.polygon(surf, self.DOOR_COLOR,
-                            (tip, head + side * (size * 0.6), head - side * (size * 0.6)))
+                            (tip, side * (size * 0.6) + head, -side * (size * 0.6) + head))
 
     @property
     def time(self):
@@ -1135,25 +1132,8 @@ class MazeGame(GameScreen):
                    * self.field_width * self.field_height * self.maze.p_len
                    / self.timer.get())
 
-    def versus_logic(self):
-        """(two-player mode) end the round as soon as the prey is caught or escapes the maze."""
-        if self._versus_over or len(self.players) < 2:
-            return
-        predator, prey = versus_pair(self.players)
-        if versus_touching(predator, prey):
-            self._versus_over = True
-            predator.score += self.versus_score()  # the catch pays the predator only
-            pg.event.post(pg.event.Event(pg.USEREVENT + 8))  # the prey dies: the ghost transition
-        elif prey.pos == self.maze.end:
-            self._versus_over = True
-            prey.score += self.versus_score()  # the escape pays the prey only
-            game_end = pg.event.Event(pg.USEREVENT + 2,  # the prey escapes: the regular transition
-                                      {'gamemode': self.gamemode,
-                                       'size': (self.field_width, self.field_height),
-                                       'difficulty': self.difficulty})
-            pg.event.post(game_end)
-
     def game_logic(self):
+        """The logic of the whole game, arranges all the sub logic and provides a handle for the main Game class"""
         if self.gamemode == GameMode.SINGLE:
             if self.players[0].pos == self.maze.end:
                 score = int(self.SCORE_DICT[self.gamemode][self.difficulty]
@@ -1162,14 +1142,27 @@ class MazeGame(GameScreen):
                             * self.maze.p_len
                             / self.timer.get())
                 self.players[0].score += score
-                print(self.players[0].score)
                 game_end = pg.event.Event(pg.USEREVENT + 2,
                                           {'gamemode': self.gamemode,
                                            'size': (self.field_width, self.field_height),
                                            'difficulty': self.difficulty})
                 pg.event.post(game_end)
         elif self.gamemode == GameMode.DOUBLE:  # (two-player mode) the chase rules live below
-            self.versus_logic()
+            if self._versus_over or len(self.players) < 2:
+                return
+            predator, prey = versus_pair(self.players)
+            if versus_touching(predator, prey):
+                self._versus_over = True
+                predator.score += self.versus_score()  # the catch pays the predator only
+                pg.event.post(pg.event.Event(pg.USEREVENT + 8))  # the prey dies: the ghost transition
+            elif prey.pos == self.maze.end:
+                self._versus_over = True
+                prey.score += self.versus_score()  # the escape pays the prey only
+                game_end = pg.event.Event(pg.USEREVENT + 2,  # the prey escapes: the regular transition
+                                          {'gamemode': self.gamemode,
+                                           'size': (self.field_width, self.field_height),
+                                           'difficulty': self.difficulty})
+                pg.event.post(game_end)
 
     def resize(self, size):
         """update the screen size variables, call every time the screen size changes"""
@@ -1178,6 +1171,7 @@ class MazeGame(GameScreen):
         self.maze_edge_width = max(int(self.cell_width // 6), 1)
         maze_size = (self.cell_width * self.field_width, self.cell_width * self.field_height)
         self.region = ((size[0] - maze_size[0]) / 2, (size[1] - maze_size[1]) / 2)
+        self.timer_pos_x = (pygame.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
         self.draw_maze()
         # sync HUD / pause screen with the new size (they are created after the first resize)
         hud = getattr(self, 'hud', None)
@@ -1243,7 +1237,7 @@ class MazeGame(GameScreen):
         return [p.score for p in self.players]
 
     # (timer) the elapsed time of the maze, centred between the two HUD panels
-    TIME_FONT_SIZE = 46          # a bit larger than the HUD text, so the time reads at a glance
+    TIME_FONT_SIZE = 46  # a bit larger than the HUD text, so the time reads at a glance
     TIME_COLOR = (255, 255, 255)
     TIME_SHADOW_COLOR = (0, 0, 0, 110)  # keeps the digits readable over the white walls
     TIME_SHADOW_OFFSET = (2, 3)
@@ -1254,102 +1248,96 @@ class MazeGame(GameScreen):
         the time standing still while the game is paused."""
         text = self.timer.get_str()
         cached = getattr(self, "_time_surf", None)
-        if cached is None or text != getattr(self, "_time_str", None):
+        if cached is None:
             font = make_font(self.TIME_FONT_SIZE)
             body = font.render(text, True, self.TIME_COLOR)
-            shadow = font.render(text, True, self.TIME_SHADOW_COLOR)
             offset = self.TIME_SHADOW_OFFSET
             surf = pg.Surface((body.get_width() + offset[0], body.get_height() + offset[1]),
                               pg.SRCALPHA)
-            surf.blit(shadow, offset)
             surf.blit(body, (0, 0))
             self._time_str = text
             self._time_surf = surf
+            self.timer_pos_x = (pygame.display.get_window_size()[0] - self._time_surf.get_size()[0] - 5) / 2
+            # DO NOT write the "Shadow..." statement outside the if-else clause, or unexpected bad thing will happen
+            # the reason is not clear now, we may find out the other day
+            Shadow(self._time_surf, self.TIME_SHADOW_OFFSET)
+        elif text != getattr(self, "_time_str", None):
+            self._time_surf.fill((0, 0, 0, 0), special_flags=pg.BLEND_RGBA_MULT)
+            body = make_font(self.TIME_FONT_SIZE).render(text, True, self.TIME_COLOR)
+            self._time_str = text
+            self._time_surf.blit(body, (0, 0))
+            Shadow(self._time_surf, self.TIME_SHADOW_OFFSET)
         return self._time_surf
 
-    def timer_pos(self, timer=None):
-        """(timer) where the time goes: centred on the screen, on the row of the HUD panels"""
-        timer = self.time_surface() if timer is None else timer
-        w, _ = pg.display.get_window_size()
+    def timer_pos(self):
+        """timer position: centred on the screen, on the row of the HUD panels"""
+        timer = self._time_surf
         hud = getattr(self, "hud", None)
         label = getattr(hud, "_p1_label", None)
         if label is not None:
             row_y, row_h = hud.MARGIN, label.get_height()
         else:  # before the HUD exists: use the free strip above the maze
             row_y, row_h = 0, int(self.region[1])
-        y = row_y + (row_h - timer.get_height()) // 2   # lined up with the HUD panels ...
-        y = min(y, int(self.region[1]) - timer.get_height() - 2)  # ... but never over the maze
-        return V((w - timer.get_width()) // 2, max(0, y))
+        y = row_y + (row_h - timer.get_height()) // 2
+        y = min(y, int(self.region[1]) - timer.get_height() - 2)
+        return V(self.timer_pos_x, max(0, y))
 
     def draw_timer(self, surface):
         """(timer) blit the elapsed time of the maze"""
         timer = self.time_surface()
-        pos = self.timer_pos(timer)
+        pos = self.timer_pos()
         surface.blit(timer, (pos[0], pos[1]))
 
-    def draw(self, surface):
+    def draw(self, surface, plot_only=False):
         surface.fill(self.bg_color)
         surface.blit(self.maze_surf, (0, 0))
         self.draw_vision_fog(surface)
-        for p in self.players:
-            p.draw(surface)
+        if not plot_only:
+            for p in self.players:
+                p.draw(surface)
         self.draw_timer(surface)
 
 
 class GameGameTrans(GameScreen):
     PHASE_TIMES = (40, 40, 40)  # index 0 for phase 0, 1 for phase 3, 2 for phase 2
-
-    # (transition stats) three lines about the maze that was just finished: how long it took, the
-    # score, and the hint to continue. They sit in the widest of the three areas the two gateway
-    # lines cut the screen into, they are all exactly as wide as each other, and they fly in from
-    # the direction the first player travels.
     STATS_COLOR = (255, 255, 255)
-    STATS_LINE_GAP = 12        # vertical gap between the three lines
-    STATS_SPACE_MARGIN = 20    # distance kept between the block and the gateway lines
-    STATS_ENTER_DURATION = 20  # frames the fly-in entrance takes
-    STATS_FLY_DISTANCE = 120   # pixels the block travels while flying in
-    STATS_TIME_SIZE = 36       # base font size of the time line
-    STATS_SCORE_SIZE = 28      # base font size of the score line
-    STATS_PROMPT_SIZE = 24     # base font size of the hint line
-    STATS_MIN_LINE_SIZE = 16   # the smallest of the three lines never goes below that size
-    STATS_PROMPT_TEXT = "press any key to continue"
-
-    # (versus escape) the round the prey got away: the prey runs out of the screen, the predator
-    # runs in after it, there is a pause, and only then are the stats of the round read out
-    ESCAPE_RUN_TIME = 40    # frames the prey takes to run off the screen
-    ESCAPE_RUN_RATIO = 0.7  # ... and it is gone after that fraction of them, so it really exits
-    ESCAPE_CHASE_TIME = 40  # frames the predator takes to run in and stop
-    ESCAPE_PAUSE_TIME = 30  # frames of silence before the stats fly in
+    STATS_LINE_GAP = 12  # vertical gap between the three stat lines
+    STATS_ENTER_DURATION = 20  # frames for the fly-in entrance animation
+    STATS_FLY_DISTANCE = 120  # pixels the stats travel during the fly-in
+    STATS_PADDING = 40  # padding from screen edge when calc pos
 
     def __init__(self, old_game: MazeGame):
         """A fancy transition between two maze games."""
         super().__init__()
 
-        # basic
+        # players
         self.maze1 = old_game
         self.players: list[Player] = old_game.players
-        # (two-player mode) only the prey walks out of the maze, so it is the player this transition
-        # animates; this list is a copy, so the game keeps its own player order (and with it the
-        # P1 / P2 labels of the HUD)
-        if len(self.players) > 1:
-            prey = versus_pair(self.players)[1]
-            self.players = [prey] + [p for p in self.players if p is not prey]
-        self.end_edge = self.maze1.end_edge
-        self._versus_reveal_r = 0  # radius the reveal of the new maze has reached so far
+        if old_game.gamemode == GameMode.SINGLE:
+            self.prey = self.players[0]
+            self.predator = None
+        else:
+            self.predator, self.prey = versus_pair(self.players)
 
-        # generate new mase game
+        self.end_edge = self.maze1.end_edge
+
+        # player heading
         if self.end_edge == 2:
-            self.players[0].heading = Cell.GO_DOWN
+            self.prey.heading = Cell.GO_DOWN
             self.start_edge = 0
         elif self.end_edge == 0:
-            self.players[0].heading = Cell.GO_UP
+            self.prey.heading = Cell.GO_UP
             self.start_edge = 2
         elif self.end_edge == 1:
-            self.players[0].heading = Cell.GO_RIGHT
+            self.prey.heading = Cell.GO_RIGHT
             self.start_edge = 3
         elif self.end_edge == 3:
-            self.players[0].heading = Cell.GO_LEFT
+            self.prey.heading = Cell.GO_LEFT
             self.start_edge = 1
+
+        if self.predator:
+            self.predator.heading = self.prey.heading
+
         self.maze2 = self.next_game = MazeGame(gamemode=self.maze1.gamemode,
                                                size_preset=self.maze1.size_preset,
                                                difficulty=self.maze1.difficulty,
@@ -1362,8 +1350,9 @@ class GameGameTrans(GameScreen):
 
         # basic surf
         self.surface0 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
-        self.surface1 = self.maze1.maze_surf.copy().convert(self.surface0)
-        self.surface2 = self.maze2.maze_surf.copy().convert(self.surface0)
+        self.surface1 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
+        self.surface2 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
+        old_game.draw(self.surface1, plot_only=True)
         self.path_surf = self.surface0.copy().convert(self.surface0)
 
         # animation related
@@ -1395,21 +1384,16 @@ class GameGameTrans(GameScreen):
                                      Quad)
 
         self.direction = [V(0, -1), V(1, 0), V(0, 1), V(-1, 0)][self.end_edge]
-        # (versus escape) the predator runs in along the runway as well, so it faces the same way
-        if len(self.players) > 1:
-            self.players[1].heading = DIR_HEADINGS[tuple(self.direction)]
         self.p0_fade.animate_now(initial_phase=1, direction=-1)
-        start = self.maze2.maze.start
-        self.p2_fade = RoundMaskFade(self.surface2,
-                                     self.PHASE_TIMES[1] // 2,
-                                     V(int(self.maze2.region[0] + self.maze2.cell_width * (start[0] + 0.5) + 1),
-                                       int(self.maze2.region[1] + self.maze2.cell_width * (start[1] + 0.5)) + 1),
-                                     Quad)
+        self.p2_fade = None
 
         # path animation
         self.intp0 = Quad(self.PHASE_TIMES[0] * 3 // 4)
         self.intp1 = DoubleQuad(self.PHASE_TIMES[2])
         self.intp2 = Quad(self.PHASE_TIMES[1] // 2, initial_phase=1, direction=-1)
+        self.chase_intp = Quad(self.PHASE_TIMES[2] // 2, initial_phase=1, direction=-1)
+        self.escape_intp = Quad(self.PHASE_TIMES[2] // 2)
+
         self.offset = V(0, 0)
         self.line_width = self.maze1.maze_edge_width
         self.line_width0 = self.line_width
@@ -1419,14 +1403,11 @@ class GameGameTrans(GameScreen):
         self.max_offset = max(*pg.display.get_window_size())
         self.line_length = sum(pg.display.get_window_size())
 
-        # (transition stats) the time and score of the maze that was just finished, frozen here so
-        # that the running timer of the old game cannot creep into what the stats show
-        self.time_str = self.maze1.timer.get_str()
-        self.score_value = self.maze1.players[0].score
-        self._stats_surf = None   # built lazily on the first stats frame
-        self._stats_pos = V(0, 0)
+        # stats text animation state (built lazily on the first stats frame)
+        self._stats_surf = None  # pre-rendered surface holding the three text lines
+        self._stats_pos = V(0, 0)  # final blit position of the stats block
         self._stats_enter = None  # fly-in interpolation
-        self._stats_fade = None   # Fade effect, started when the key press ends the phase
+        self._stats_fade = None  # Fade effect started when pre_p3 flips to 1
 
     def resize(self, size):
         self.maze1.resize(size)
@@ -1485,6 +1466,7 @@ class GameGameTrans(GameScreen):
 
     def _draw_path_1(self):
         self.path_surf = pg.Surface(self.surface0.get_size(), pg.SRCALPHA).convert_alpha(self.surface0)
+        # noinspection DuplicatedCode
         p1 = self.p1[0] + (self.p1[1] - self.p1[0]) * self.intp1.get()
         p2 = self.p2[0] + (self.p2[1] - self.p2[0]) * self.intp1.get()
         w, h = pg.display.get_window_size()
@@ -1529,109 +1511,64 @@ class GameGameTrans(GameScreen):
         w = self.maze2.maze_edge_width // 2
         Shadow(self.path_surf, (w, w))
 
-    def _versus_reveal_center(self):
-        """(two-player mode) the centre of the reveal of the new maze, in screen coordinates; the
-        maze surface is blitted at self.offset, so the mask centre travels with it."""
-        return cell_to_surf(self.maze2, self.maze2.maze.start) + self.offset
-
-    def _versus_reveal_radius(self):
-        """(two-player mode) how far the reveal of the new maze has come: 0 until it starts, and the
-        last radius it reached once the effect is over (an effect that stopped animating keeps its
-        last mask, so the value has to be remembered instead of read back from the effect)."""
-        if self.p2_fade.animating:
-            self._versus_reveal_r = self.p2_fade.radius
-        return self._versus_reveal_r
-
-    def _versus_revealed(self, pos):
-        """(two-player mode) whether the reveal of the new maze has already swept over a position."""
-        center = self._versus_reveal_center()
-        return math.hypot(pos[0] - center[0], pos[1] - center[1]) <= self._versus_reveal_radius()
-
-    def _versus_drawn_positions(self):
-        """(two-player mode) where the players are about to be drawn: the prey keeps the waypoint of
-        the transition, and after an escape the predator stands on the entrance it walked into."""
-        positions = [self.p0[1]]
-        chasing = self._chasing_player()
-        if chasing is not None:
-            positions.append(cell_to_surf(self.maze2, chasing.pos))
-        return positions
-
-    def _versus_hidden_frames(self):
-        """(two-player mode) copy the frame under every player before they are drawn, so that the
-        ones the reveal has not reached yet can be put back within the same frame."""
-        frames = []
-        span = int(self.maze2.cell_width * 1.6)
-        for pos in self._versus_drawn_positions():
-            rect = pg.Rect(0, 0, span, span)
-            rect.center = (int(pos[0]), int(pos[1]))
-            rect = rect.clip(self.surface0.get_rect())
-            if rect.width > 0 and rect.height > 0:
-                frames.append((pos, rect, self.surface0.subsurface(rect).copy()))
-        return frames
-
-    def _hide_unrevealed_players(self, frames):
-        """(two-player mode) put those frames back over the players the reveal has not reached yet,
-        so that the new maze always shows up before anybody stands in it."""
-        for pos, rect, under in frames:
-            if not self._versus_revealed(pos):
-                self.surface0.blit(under, rect)
-
     def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
-        if self._ani_p == 0 and self.life == self.PHASE_TIMES[0]:
+        if self._ani_p == 0 and self.life == self.PHASE_TIMES[0]:  # enter phase 1
             self.life = 0
             self._ani_p += 1
             self.surface0.fill(self._start_color)
-        elif self._ani_p == 2 and self.life == self.PHASE_TIMES[1]:
+        elif self._ani_p == 2 and self.life == self.PHASE_TIMES[1]:  # enter the next game
             end = pg.event.Event(pg.USEREVENT + 3,
                                  {'new_game': self.maze2})
             pg.event.post(end)
         elif self._ani_p == 1:
-            # (versus escape) the chase has to play out first: a key that comes too early is
-            # swallowed, so the little scene is not skipped by accident
-            if len(self.players) > 1 and not self._escape_ready():
-                events = [event for event in events
-                          if event.type not in (pg.KEYDOWN, pg.MOUSEBUTTONDOWN)]
             for event in events:
                 if event.type == pg.KEYDOWN or event.type == pg.MOUSEBUTTONDOWN:
-                    if not self.pre_p3:
+                    if not self.pre_p3 and self.life > 30:
                         pygame.event.post(pygame.event.Event(pygame.USEREVENT + 7, {"sound": rotate_sound}))
                         self.color_anim.animate_now()
-                        self.pre_p3 = 1
-                        self.life = 0
-                        # (transition stats) the stats fade away while the colours change
+                        # fade the stats out together with the background color change
                         if self._stats_surf is not None and self._stats_fade is None:
+                            # snap an unfinished entrance to its final, fully opaque state
                             self._stats_enter = None
                             self._stats_surf.set_alpha(255)
-                            self._stats_fade = Fade(self._stats_surf, duration=self.PHASE_TIMES[2],
+                            self._stats_fade = Fade(self._stats_surf,
+                                                    duration=self.PHASE_TIMES[2],
                                                     interpolation=Linear)
                             self._stats_fade.animate_now(initial_phase=1, direction=-1)
-            if self.pre_p3 and self.life == self.PHASE_TIMES[2]:
+                        self.pre_p3 = 1
+                        self.life = 0
+            if self.pre_p3 and self.life == self.PHASE_TIMES[2]:  # enter phase 2
                 self.life = 0
                 self._ani_p += 1
                 for p in self.players:
                     p.game = self.maze2
-                # (two-player mode) the gateway flight ends on the entrance, but with two players
-                # the first one may spawn elsewhere, so it lands on its own cell too; the switch is
-                # invisible because the new maze still fades in behind a flat background
-                if len(self.players) > 1:
-                    self.p0[1] = cell_to_surf(self.maze2, self.players[0].pos)
-                    # (versus escape) and it faces into the new maze again, not back out of it
-                    self.players[1].heading = VERSUS_ENTRANCE_HEADINGS[self.start_edge]
+                self.next_game.draw(self.surface2, plot_only=True)
+                self.p2_fade = RoundMaskFade(self.surface2, self.PHASE_TIMES[1] // 2, self.p0[1], Quad)
+                self.p2_fade.animate_now()
+                self.offset = V(int(self.intp2.get() * self.max_offset * self.direction[0]),
+                                int(self.intp2.get() * self.max_offset * self.direction[1]))
+
         self.life += 1
         return events
 
     def draw(self, surface: pg.Surface) -> None:
+
+        # phase 0: old game fades, player goes into a straight path
         if self._ani_p == 0:
             self.surface0.fill(self._start_color)
             self._draw_path_0()
             self.surface0.blit(self.path_surf, (0, 0))
             self.surface0.blit(self.surface1, self.offset)
-            self.players[0].directly_draw(self.surface0, self.p0[0])
+            self.prey.directly_draw(self.surface0, self.p0[0], (self.p_size0,) * 2)
             if self.life >= self.PHASE_TIMES[0] // 4:
                 self.intp0.update()
                 self.offset = V(int(-self.intp0.get() * self.max_offset * self.direction[0]),
                                 int(-self.intp0.get() * self.max_offset * self.direction[1]))
             surface.blit(self.surface0, (0, 0))
+
+        # phase 1: the path becomes longer and throughout the screen, the score shown and game paused
+        #          if oud game is a double-player game and prey escapes,
+        #          prey goes out of the screen and predator shown in this phase
         elif self._ani_p == 1:
             surface.blit(self.surface0, (0, 0))
             if self.pre_p3:
@@ -1641,26 +1578,26 @@ class GameGameTrans(GameScreen):
                 p = self.p0[0] + (self.p0[1] - self.p0[0]) * self.intp1.get()
                 self._draw_path_1()
                 surface.blit(self.path_surf, (0, 0))
-                under = self._frame_under(surface, p)
-                self.players[0].directly_draw(surface, p, p_size)
-                if under is None:
-                    self._draw_stats(surface)
-                else:  # (versus escape) the prey is gone: the predator walks on into the new maze
-                    surface.blit(under[0], under[1])
-                    self._draw_chase_flight(surface, p_size)
-                    self._draw_stats(surface)
-
+                self._draw_stats(surface)  # stats fading out via the Fade effect
+                if self.next_game.gamemode == GameMode.DOUBLE:
+                    self.predator.directly_draw(surface,
+                                                p + self.direction * (self.chase_intp.get() * self.line_length), p_size)
+                    self.prey.directly_draw(surface,
+                                            p + self.direction * (self.escape_intp.get() * self.line_length * 2),
+                                            p_size)
+                else:
+                    self.prey.directly_draw(surface, p, p_size)
                 self.intp1.update()
+                self.escape_intp.update()
+                if self.life >= self.PHASE_TIMES[2] // 2:
+                    self.chase_intp.update()
             else:
                 surface.blit(self.surface0, (0, 0))
                 surface.blit(self.path_surf, (0, 0))
-                under = self._frame_under(surface, self.p0[0])
-                self.players[0].directly_draw(surface, self.p0[0])
-                if under is None:
-                    self._draw_stats(surface)
-                else:  # (versus escape) run the little chase before the stats are read
-                    surface.blit(under[0], under[1])
-                    self._draw_escape_actors(surface)
+                self.prey.directly_draw(surface, self.p0[0])
+                self._draw_stats(surface)
+
+        # phase 2: straight path disappears and new game shown
         elif self._ani_p == 2:
             self.surface0.fill(self._end_color)
             self._draw_path_2()
@@ -1669,16 +1606,11 @@ class GameGameTrans(GameScreen):
                 self.p2_fade.animate_now()
             if self.life > self.PHASE_TIMES[1] // 3:
                 self.surface0.blit(self.surface2, self.offset)
-            # (two-player mode) the map has to load before anybody stands in it: keep the frame under
-            # the players and put back the ones the reveal of the new maze has not reached yet
-            under = self._versus_hidden_frames() if len(self.players) > 1 else []
-            self.players[0].directly_draw(self.surface0, self.p0[1])
-            # (versus escape) the predator arrived on the entrance and stays there, the way the one
-            # player of the single mode stays in the new maze after its own transition
-            chasing = self._chasing_player()
-            if chasing is not None:
-                chasing.directly_draw(self.surface0, cell_to_surf(self.maze2, chasing.pos))
-            self._hide_unrevealed_players(under)
+
+            if self.next_game.gamemode == GameMode.DOUBLE:
+                self.predator.directly_draw(self.surface0, self.p0[1])
+            else:
+                self.prey.directly_draw(self.surface0, self.p0[1])
 
             self.intp2.update()
             self.offset = V(int(self.intp2.get() * self.max_offset * self.direction[0]),
@@ -1686,154 +1618,42 @@ class GameGameTrans(GameScreen):
 
             surface.blit(self.surface0, (0, 0))
 
-    def _chasing_player(self):
-        """(versus escape) the player the transition does not animate: the prey is on stage first,
-        the predator is the one that runs in after it."""
-        return self.players[1] if len(self.players) > 1 else None
+    def _build_stats(self):
+        """Pre-render the three stat lines onto self._stats_surf and compute the final
+        blit position; called once on the first stats frame."""
+        time_str = self.maze1.timer.get_str()
+        score_str = f"Total score: {self.prey.score}"
+        prompt_str = "exit: <Backspace>  continue: <other>"
+        prop_font_size = sum(pygame.display.get_window_size()) // 100
+        total_w = make_font(prop_font_size).size(prompt_str)
+        sc_size = prop_font_size
+        tm_size = prop_font_size
+        while make_font(sc_size).size(score_str) < total_w:
+            sc_size += 1
+        while make_font(tm_size).size(time_str) < total_w:
+            tm_size += 1
+        fonts = [make_font(tm_size), make_font(sc_size), make_font(prop_font_size)]
 
-    def _frame_under(self, surface, pos):
-        """(versus escape) the frame under one player, so the transition can hide the player it
-        animates and put its own actors on the runway instead. None for a single player game."""
-        if len(self.players) < 2:
-            return None
-        span = int(self.maze2.cell_width * 1.6)
-        rect = pg.Rect(0, 0, span, span)
-        rect.center = (int(pos[0]), int(pos[1]))
-        rect = rect.clip(surface.get_rect())
-        if rect.width <= 0 or rect.height <= 0:
-            return None
-        return surface.subsurface(rect).copy(), rect
+        lines = [time_str, score_str, prompt_str]
 
-    def _escape_lane(self):
-        """(versus escape) the lane both players run along: where it starts, how far past the edge
-        the prey has to run to be gone, how far behind the start the predator comes in from, and
-        how far along the middle of the screen is. Both distances are measured along the direction
-        the players travel, so the two of them stay on the picture for the whole beat."""
-        w, h = pg.display.get_window_size()
-        start = self.p0[0]
-        margin = int(self.maze2.cell_width * 1.2)  # one sprite of clearance past the edge
-        if self.direction[0] > 0:
-            out, back = w - start[0] + margin, start[0] + margin
-        elif self.direction[0] < 0:
-            out, back = start[0] + margin, w - start[0] + margin
-        elif self.direction[1] > 0:
-            out, back = h - start[1] + margin, start[1] + margin
-        else:
-            out, back = start[1] + margin, h - start[1] + margin
-        centre = V(w // 2, h // 2)
-        middle = ((centre[0] - start[0]) * self.direction[0]
-                  + (centre[1] - start[1]) * self.direction[1])
-        return start, out, back, middle
+        # render each line, then use the widest surface width as target_w
+        rendered = [f.render(s, True, self.STATS_COLOR) for f, s in zip(fonts, lines)]
+        widths = [r.get_width() for r in rendered]
+        target_w = max(widths)
+        heights = [r.get_height() for r in rendered]
+        total_h = sum(heights) + self.STATS_LINE_GAP * (len(lines) - 1)
 
-    def _escape_stage(self):
-        """(versus escape) which beat of the intro this frame belongs to"""
-        if self.life < self.ESCAPE_RUN_TIME:
-            return "prey"
-        if self.life < self.ESCAPE_RUN_TIME + self.ESCAPE_CHASE_TIME:
-            return "predator"
-        if self.life < self.ESCAPE_RUN_TIME + self.ESCAPE_CHASE_TIME + self.ESCAPE_PAUSE_TIME:
-            return "pause"
-        return "stats"
+        # blit the three lines, each centered within target_w, onto one transparent surface
+        stats_surf = pg.Surface((target_w + 3, total_h + 3), pg.SRCALPHA)
+        y_cursor = 0
+        for i, r in enumerate(rendered):
+            stats_surf.blit(r, ((target_w - r.get_width()) // 2, y_cursor))
+            y_cursor += heights[i] + self.STATS_LINE_GAP
+        self._stats_surf = stats_surf
 
-    def _escape_ready(self):
-        """(versus escape) whether the intro is over, so a key may start the stats fade"""
-        return self._escape_stage() == "stats"
-
-    def _escape_actor_positions(self):
-        """(versus escape) (prey position, predator position) of this frame; None means off stage"""
-        start, out, back, middle = self._escape_lane()
-        stage = self._escape_stage()
-        prey = predator = None
-        if stage == "prey":  # the prey dashes off the screen and is gone before its beat is over
-            gone = min(1.0, self.life / (self.ESCAPE_RUN_TIME * self.ESCAPE_RUN_RATIO))
-            prey = start + self.direction * int(out * gone)
-        elif stage == "predator":  # the predator runs in from the other edge of the screen
-            covered = (self.life - self.ESCAPE_RUN_TIME) / self.ESCAPE_CHASE_TIME
-            predator = start + self.direction * int(-back + (middle + back) * covered)
-        else:  # the pause and the stats: it stands in the middle of the screen
-            predator = start + self.direction * int(middle)
-        return prey, predator
-
-    def _draw_escape_actors(self, surface):
-        """(versus escape) the little chase before the stats: only once the predator has stopped
-        and the pause is over are the stats of the round drawn."""
-        prey, predator = self._escape_actor_positions()
-        if prey is not None:
-            self.players[0].directly_draw(surface, prey)
-        if predator is not None:
-            self._chasing_player().directly_draw(surface, predator)
-        if self._escape_ready():
-            self._draw_stats(surface)
-
-    def _draw_chase_flight(self, surface, size=None):
-        """(versus escape) after the stats, the predator carries on into the new maze, the way the
-        single player mode walks its own player over there."""
-        start, out, back, middle = self._escape_lane()
-        stop = start + self.direction * int(middle)
-        target = self.p0[1]
-        pos = stop + (target - stop) * self.intp1.get()
-        self._chasing_player().directly_draw(surface, pos, size)
-
-    def _stats_texts(self):
-        """(transition stats) the three lines: the time the last maze took, its score, the hint"""
-        return [self.time_str, f"score: {self.score_value}", self.STATS_PROMPT_TEXT]
-
-    def _stats_lines(self, max_width=None):
-        """(transition stats) render the three lines so that they all come out exactly as wide as
-        each other: every line keeps a font size of its own, the sizes are scaled until the widths
-        match, a common factor keeps the smallest of them readable, and another common factor
-        shrinks the whole set when it would not fit into the space it has to sit in. Returns the
-        rendered lines together with the font sizes they ended up with."""
-        texts = self._stats_texts()
-        sizes = [self.STATS_TIME_SIZE, self.STATS_SCORE_SIZE, self.STATS_PROMPT_SIZE]
-
-        def equalise(sizes_ls):
-            """scale every size so that all the lines come out the same width"""
-            for _ in range(2):  # font metrics are not linear, so settle in two passes
-                widths = [max(1, make_font(size).size(text)[0]) for text, size in zip(texts, sizes_ls)]
-                target = max(widths)
-                sizes_ls = [size * target / width for size, width in zip(sizes_ls, widths)]
-            return sizes_ls
-
-        sizes = equalise(sizes)
-        if min(sizes) < self.STATS_MIN_LINE_SIZE:  # keep the smallest line readable
-            factor = self.STATS_MIN_LINE_SIZE / min(sizes)
-            sizes = equalise([size * factor for size in sizes])
-        widths = [max(1, make_font(size).size(text)[0]) for text, size in zip(texts, sizes)]
-        target = max(widths)
-        if max_width is not None:
-            target = max(1, min(target, max_width))  # the lines are stretched to exactly this
-        if max_width is not None and max(widths) > max_width:  # and fit the space they sit in
-            factor = max_width / max(widths)
-            sizes = equalise([size * factor for size in sizes])
-            widths = [max(1, make_font(size).size(text)[0]) for text, size in zip(texts, sizes)]
-            target = max(1, min(max(widths), max_width))
-        lines = []
-        for text, size, width in zip(texts, sizes, widths):
-            line = make_font(size).render(text, True, self.STATS_COLOR)
-            if width != target:  # one exact stretch at the end, so the three are really as long
-                line = pg.transform.smoothscale(line, (target, line.get_height()))
-            lines.append(line)
-        return lines, sizes
-
-    def _stats_surface(self, max_width=None):
-        """(transition stats) the three lines stacked into one surface of a single width"""
-        lines, _ = self._stats_lines(max_width)
-        width = max(line.get_width() for line in lines)
-        height = sum(line.get_height() for line in lines) + self.STATS_LINE_GAP * (len(lines) - 1)
-        stats = pg.Surface((width, height), pg.SRCALPHA)
-        y = 0
-        for line in lines:
-            stats.blit(line, ((width - line.get_width()) // 2, y))
-            y += line.get_height() + self.STATS_LINE_GAP
-        return stats
-
-    def _stats_spaces(self):
-        """(transition stats) the three areas the two gateway lines cut the screen into, taken from
-        the very position _draw_path_1 draws them at right now. The stats are built while the lines
-        are still standing at the exit of the finished maze, which is also the moment they are read,
-        so the largest of those three areas is the one the block belongs in."""
+        # compute the three spaces formed by the two parallel lines
         sw, sh = pg.display.get_window_size()
+        # noinspection DuplicatedCode
         a1 = self.p1[0] + (self.p1[1] - self.p1[0]) * self.intp1.get()
         a2 = self.p2[0] + (self.p2[1] - self.p2[0]) * self.intp1.get()
         if self.end_edge == 0:
@@ -1844,58 +1664,65 @@ class GameGameTrans(GameScreen):
             a1, a2 = V(a1[0], sh), V(a2[0], sh)
         elif self.end_edge == 3:
             a1, a2 = V(0, a1[1]), V(0, a2[1])
-        if self.end_edge in (0, 2):  # the lines are vertical: the screen is split along x
-            x1, x2 = sorted((int(a1[0]), int(a2[0])))
-            return [(0, 0, x1, sh), (x1, 0, x2 - x1, sh), (x2, 0, sw - x2, sh)]
-        y1, y2 = sorted((int(a1[1]), int(a2[1])))  # horizontal lines: split along y
-        return [(0, 0, sw, y1), (0, y1, sw, y2 - y1), (0, y2, sw, sh - y2)]
 
-    def _stats_fly_offset(self, progress):
-        """(transition stats) where the block is while it flies in: it starts one fly length
-        behind the first player along the direction that player travels, so a player facing up
-        gets its stats flying up from below."""
-        behind = int(-self.STATS_FLY_DISTANCE * (1 - progress))
-        return V(self.direction[0] * behind, self.direction[1] * behind)
+        if self.end_edge in (0, 2):  # vertical lines -> split by x
+            x1, x2 = sorted([int(a1[0]), int(a2[0])])
+            spaces = [(0, 0, x1, sh), (x1, 0, x2 - x1, sh), (x2, 0, sw - x2, sh)]
+        else:  # horizontal lines -> split by y
+            y1, y2 = sorted([int(a1[1]), int(a2[1])])
+            spaces = [(0, 0, sw, y1), (0, y1, sw, y2 - y1), (0, y2, sw, sh - y2)]
 
-    def _build_stats(self):
-        """(transition stats) put the block into the widest of the three areas, aligned with the
-        first player along the free axis, then start the fly-in entrance."""
-        bx, by, bw, bh = max(self._stats_spaces(), key=lambda space: space[2] * space[3])
-        self._stats_surf = self._stats_surface(max(1, bw - self.STATS_SPACE_MARGIN))
-        w, h = self._stats_surf.get_size()
+        bx, by, bw, bh = max(spaces, key=lambda s: s[2] * s[3])
+
+        # align with player along the free axis, then clamp into the space
         player_x, player_y = int(self.p0[0][0]), int(self.p0[0][1])
-        if self.end_edge in (1, 3):  # horizontal lines: line the block up with the player's x
-            x, y = player_x - w // 2, by + (bh - h) // 2
-        else:                        # vertical lines: line it up with the player's y
-            x, y = bx + (bw - w) // 2, player_y - h // 2
-        x = max(bx, min(x, bx + bw - w))  # never over the lines ...
-        y = max(by, min(y, by + bh - h))
-        sw, sh = pg.display.get_window_size()
-        self._stats_pos = V(max(0, min(x, sw - w)), max(0, min(y, sh - h)))  # ... nor off screen
+        if self.end_edge in (1, 3):  # horizontal lines -> align x with player
+            top_x = player_x - target_w // 2
+            top_y = by + (bh - total_h) // 2
+        else:  # vertical lines -> align y with player
+            top_x = bx + (bw - target_w) // 2
+            top_y = player_y - total_h // 2
+
+        # clamp so the text block stays within the largest space and on-screen
+        top_x = max(bx, min(top_x, bx + bw - target_w))
+        top_y = max(by, min(top_y, by + bh - total_h))
+        top_x = max(self.STATS_PADDING, min(top_x, sw - target_w - self.STATS_PADDING))
+        top_y = max(self.STATS_PADDING, min(top_y, sh - total_h - self.STATS_PADDING))
+        self._stats_pos = V(int(top_x), int(top_y))
+
+        # start the fly-in interpolation
         self._stats_enter = ReversedQuad(self.STATS_ENTER_DURATION)
+        Shadow(self._stats_surf, (3, 3))
 
     def _draw_stats(self, surface):
-        """(transition stats) draw the block with its entrance; once the key press started the
-        fade-out, the Fade effect owns the opacity of the surface instead."""
+        """Blit the stats block; handles the fly-in entrance and hands opacity over to
+        the Fade effect once pre_p3 flips to 1."""
         if self._stats_surf is None:
             self._build_stats()
-        offset = V(0, 0)
+
+        # entrance: fly in from the opposite side of the player's facing and fade in
+        fly = V(0, 0)
         if self._stats_enter is not None and self._stats_fade is None:
             self._stats_enter.update()
-            progress = self._stats_enter.get()
-            if progress >= 1.0:
+            p = self._stats_enter.get()
+            if p >= 1.0:
                 self._stats_enter = None
-                progress = 1.0
-            offset = self._stats_fly_offset(progress)
-            self._stats_surf.set_alpha(int(progress * 255))
+                p = 1.0
+            fly = V(int(-self.direction[0] * self.STATS_FLY_DISTANCE * (1 - p)),
+                    int(-self.direction[1] * self.STATS_FLY_DISTANCE * (1 - p)))
+            self._stats_surf.set_alpha(int(p * 255))
+        elif self._stats_fade is None:
+            self._stats_surf.set_alpha(255)
+        # while self._stats_fade is active it owns the surface's per-pixel opacity
+
         surface.blit(self._stats_surf,
-                     (self._stats_pos[0] + offset[0], self._stats_pos[1] + offset[1]))
+                     (self._stats_pos[0] + fly[0], self._stats_pos[1] + fly[1]))
 
     def get_new_game(self):
         return self.maze2
 
 
-class ManuGameTrans(GameScreen):
+class BlackScreenTrans(GameScreen):
     HALF_DURATION = 20
 
     def __init__(self, old_screen, color=(0, 0, 0), _manu=None, **game_preset):
@@ -1990,11 +1817,11 @@ class VersusHUD(HUD):
 
     # layout hyperparameters
     TAG_FONT_RATIO = 0.42  # tag text height, as a fraction of the player label height
-    TAG_PAD_X = 14         # horizontal padding inside a tag
-    TAG_PAD_Y = 6          # vertical padding inside a tag
-    ROW_FONT_SIZE = 24     # points / death rows, kept smaller than the timer
-    ROW_GAP = 6            # gap between the label, the tag and the two rows
-    ROW_ICON_GAP = 6       # gap between the skull and its count
+    TAG_PAD_X = 14  # horizontal padding inside a tag
+    TAG_PAD_Y = 6  # vertical padding inside a tag
+    ROW_FONT_SIZE = 24  # points / death rows, kept smaller than the timer
+    ROW_GAP = 6  # gap between the label, the tag and the two rows
+    ROW_ICON_GAP = 6  # gap between the skull and its count
     ROW_COLOR = (255, 255, 255)
 
     def _row_text(self, text):
@@ -2020,7 +1847,7 @@ class VersusHUD(HUD):
         return tag
 
     def _deaths_surface(self, index):
-        """the death row of one player: the skull and how often that player died"""
+        """the death row of one player: the skull and count of deaths"""
         scores = self._fetch_scores()
         count = scores[index][0] if index < len(scores) else 0
         icon = self._kill_icon
@@ -2082,9 +1909,9 @@ class RecordsScreen(GameScreen):
     LINE_GAP = 12
     PAD = 34
     PANEL_RADIUS = 28
-    WIDTH_RATIO = 0.84   # the panel is at least that wide, so a short list still fills the screen
+    WIDTH_RATIO = 0.84  # the panel is at least that wide, so a short list still fills the screen
     HEIGHT_RATIO = 0.92  # ... and never taller than that: the list is cut to the rows that fit
-    PANEL_COLOR = (0, 0, 0, 195)       # the menu gradient is light, so the list gets a dark panel
+    PANEL_COLOR = (0, 0, 0, 195)  # the menu gradient is light, so the list gets a dark panel
     ROW_BAND_COLOR = (255, 255, 255, 26)  # a faint band on every other row, to keep it readable
     TEXT_COLOR = (255, 255, 255)
     DIM_COLOR = (208, 224, 218)
@@ -2126,18 +1953,21 @@ class RecordsScreen(GameScreen):
 
     def _build(self):
         """lay the title, the table and the footer out in one panel"""
-        title = make_font(self.TITLE_SIZE).render(self.TITLE, True, self.TEXT_COLOR)
+        rec_title = make_font(self.TITLE_SIZE).render(self.TITLE, True, self.TEXT_COLOR)
         best = self.records.best_single()
-        head = [make_font(self.ROW_SIZE).render(f"best solo score: pts {best}", True, self.DIM_COLOR)]             if best is not None else []
+        head = [make_font(self.ROW_SIZE).render(f"best solo score: pts {best}", True,
+                                                self.DIM_COLOR)] if best is not None else []
         hint = make_font(self.HINT_SIZE).render(self.HINT_TEXT, True, self.DIM_COLOR)
         columns = make_font(self.ROW_SIZE).render(self.HEADER, True, self.DIM_COLOR)
         btn_w, btn_h = self.CLEAR_SIZE
         footer_h = max(hint.get_height(), btn_h)
 
         wanted = self.records.shown()
-        sample = make_font(self.ROW_SIZE).render(self.records.row_text(wanted[0]), True, self.TEXT_COLOR)             if wanted else make_font(self.ROW_SIZE).render(self.EMPTY_TEXT, True, self.DIM_COLOR)
+        sample = make_font(self.ROW_SIZE).render(self.records.row_text(wanted[0]), True,
+                                                 self.TEXT_COLOR) if wanted else make_font(self.ROW_SIZE).render(
+            self.EMPTY_TEXT, True, self.DIM_COLOR)
         pitch = sample.get_height() + self.LINE_GAP
-        fixed = (self.PAD * 2 + title.get_height() + self.LINE_GAP * 2 + columns.get_height()
+        fixed = (self.PAD * 2 + rec_title.get_height() + self.LINE_GAP * 2 + columns.get_height()
                  + self.LINE_GAP + sum(line.get_height() + self.LINE_GAP for line in head) + footer_h)
         shown = wanted[:self._rows_that_fit(fixed, pitch, len(wanted) or 1)]
         if shown:
@@ -2149,22 +1979,22 @@ class RecordsScreen(GameScreen):
 
         table_w = max([row.get_width() for row in rows]
                       + ([columns.get_width()] if columns is not None else []))
-        content_w = max([title.get_width(), table_w, hint.get_width() + self.FOOTER_GAP + btn_w]
+        content_w = max([rec_title.get_width(), table_w, hint.get_width() + self.FOOTER_GAP + btn_w]
                         + [line.get_width() for line in head])
         width = max(content_w + self.PAD * 2, int(self.size[0] * self.WIDTH_RATIO))
         body_h = sum(row.get_height() + self.LINE_GAP for row in rows)
         body_h += sum(line.get_height() + self.LINE_GAP for line in head)
         if columns is not None:
             body_h += columns.get_height() + self.LINE_GAP
-        height = self.PAD * 2 + title.get_height() + self.LINE_GAP * 2 + body_h + footer_h
+        height = self.PAD * 2 + rec_title.get_height() + self.LINE_GAP * 2 + body_h + footer_h
 
         self._panel = pg.Surface((width, height), pg.SRCALPHA)
         pg.draw.rect(self._panel, self.PANEL_COLOR, self._panel.get_rect(),
                      border_radius=self.PANEL_RADIUS)
 
         y = self.PAD
-        self._panel.blit(title, ((width - title.get_width()) // 2, y))
-        y += title.get_height() + self.LINE_GAP * 2
+        self._panel.blit(rec_title, ((width - rec_title.get_width()) // 2, y))
+        y += rec_title.get_height() + self.LINE_GAP * 2
         for line in head:
             self._panel.blit(line, ((width - line.get_width()) // 2, y))
             y += line.get_height() + self.LINE_GAP
@@ -2180,7 +2010,7 @@ class RecordsScreen(GameScreen):
             self._panel.blit(row, (left, y))
             y += row.get_height() + self.LINE_GAP
 
-        # the footer row: the hint in the middle, the clear button at the right hand side
+        # the footer row: the hint in the middle, the clear button on the right hand side
         self._body_bottom = y  # where the table ended: the footer and its button come after it
         footer_y = height - self.PAD - footer_h
         self._panel.blit(hint, ((width - hint.get_width()) // 2,
@@ -2195,7 +2025,7 @@ class RecordsScreen(GameScreen):
             if self.clear_btn.handle_event(event):
                 events.remove(event)
                 continue
-            if self.life >= self.INPUT_LOCK and event.type in (pg.KEYDOWN, pg.MOUSEBUTTONDOWN):
+            if self.life >= self.INPUT_LOCK and event.type == pg.KEYDOWN:
                 if self.back_cb is not None:
                     self.back_cb()
                 break
@@ -2243,13 +2073,13 @@ class VersusResult(GameScreen):
 
     def _build(self):
         # no synthetic bold here either: a large plain size stays crisp
-        title = make_font(self.TITLE_SIZE).render(self.winner_text(), True, palette[-1])
+        vs_title = make_font(self.TITLE_SIZE).render(self.winner_text(), True, palette[-1])
         lines = [make_font(self.LINE_SIZE).render(
             f"P{i + 1}    pts {self.scores[i]}    deaths {self.deaths[i]}", True, palette[-1])
             for i in range(len(self.scores))]
         prompt = make_font(self.PROMPT_SIZE).render("press any key to continue", True, palette[-1])
-        width = max([title.get_width()] + [line.get_width() for line in lines] + [prompt.get_width()])
-        height = (title.get_height() + self.LINE_GAP
+        width = max([vs_title.get_width()] + [line.get_width() for line in lines] + [prompt.get_width()])
+        height = (vs_title.get_height() + self.LINE_GAP
                   + sum(line.get_height() + self.LINE_GAP for line in lines)
                   + prompt.get_height())
         self.panel = pg.Surface((width + self.PANEL_PAD * 2, height + self.PANEL_PAD * 2),
@@ -2257,7 +2087,7 @@ class VersusResult(GameScreen):
         pg.draw.rect(self.panel, self.PANEL_COLOR, self.panel.get_rect(),
                      border_radius=self.PANEL_RADIUS)
         y = self.PANEL_PAD
-        for surf in [title] + lines + [prompt]:
+        for surf in [vs_title] + lines + [prompt]:
             self.panel.blit(surf, ((self.panel.get_width() - surf.get_width()) // 2, y))
             y += surf.get_height() + self.LINE_GAP
         self.pos = ((self.size[0] - self.panel.get_width()) // 2,
@@ -2308,7 +2138,7 @@ def versus_touching(predator, prey):
     """(two-player mode) whether the predator has caught the prey: the two sprites count as
     touching when the distance between the centres of what is drawn is smaller than half of their
     edge length. The centre of a sprite is the region of its animation, which is exactly the point
-    Player.draw puts it on, so the rule follows the picture the players see - including the frames
+    "Player.draw" puts it on, so the rule follows the picture the players see - including the frames
     of a slide, where a player passes over the other one without ever sharing a cell."""
     here = predator.cur_anim.get_position()
     there = prey.cur_anim.get_position()
@@ -2355,13 +2185,13 @@ class VersusDeathTrans(GameScreen):
     # prepared with the two roles swapped. Any key jumps straight into that maze.
 
     # hyperparameters
-    GRAY_FADE_TIME = 30       # frames the frozen frame takes to turn gray
-    GHOST_TIME = 60           # frames the ghost takes to float out
-    GHOST_RISE_RATIO = 0.42   # rising distance, as a fraction of the window height
-    GHOST_DRIFT_RATIO = 0.22  # sideway drift, as a fraction of the rising distance
-    GHOST_WOBBLE = 8          # sideway wobble amplitude, in pixels
+    GRAY_FADE_TIME = 120  # frames the frozen frame takes to turn gray
+    GHOST_TIME = 120  # frames the ghost takes to float out
+    GHOST_RISE_RATIO = 0.1  # rising distance, as a fraction of the window height
+    GHOST_DRIFT_RATIO = 0.22  # drift, as a fraction of the rising distance
+    GHOST_WOBBLE = 8  # wobble amplitude, in pixels
     GHOST_COLOR = (238, 242, 245, 255)  # the ghost is the prey's silhouette, in a pale gray
-    INPUT_LOCK = 20           # frames of ignored keys, so a held key cannot skip the scene
+    INPUT_LOCK = 20  # frames of ignored keys, so a held key cannot skip the scene
     DEATH_FONT_SIZE = 28
     PROMPT_FONT_SIZE = 24
     PROMPT_COLOR = (255, 255, 255)
@@ -2426,15 +2256,9 @@ class VersusDeathTrans(GameScreen):
         catcher_pos = (self._catcher_pos if self._catcher_pos is not None
                        else cell_to_surf(self.maze1, self._catcher_cell))
         self.frozen.blit(catcher, catcher.get_rect(center=(catcher_pos[0], catcher_pos[1])))
-        if hasattr(pg.transform, "grayscale"):
-            self.gray = pg.transform.grayscale(self.frozen)
-        else:  # older pygame: wash the frame out with a plain gray overlay instead
-            self.gray = pg.Surface(size, pg.SRCALPHA)
-            self.gray.fill((128, 128, 128, 255))
-        # the ghost is the prey's silhouette, built the same way the maze shadow is
-        mask = pg.mask.from_surface(pg.transform.smoothscale(self._ghost_sprite, sprite_size), 127)
-        self.ghost = mask.to_surface(setcolor=self.GHOST_COLOR,
-                                     unsetcolor=(0, 0, 0, 0)).convert_alpha()
+        self.gray = pg.transform.grayscale(self.frozen)
+
+        self.ghost = pygame.transform.smoothscale(icons_dict["ghost"], (self.maze1.cell_width * 0.8,) * 2)
         self.ghost_pos = cell_to_surf(self.maze1, self._ghost_cell)
 
     def _build_prompt(self):
@@ -2442,7 +2266,7 @@ class VersusDeathTrans(GameScreen):
         icon = pg.transform.smoothscale(icons_dict["dead_icon"].convert_alpha(), (34, 34))
         count = make_font(self.DEATH_FONT_SIZE).render(f"x {self.deaths}", True, self.PROMPT_COLOR)
         hint = make_font(self.PROMPT_FONT_SIZE).render("press any key to continue", True,
-                                                      self.PROMPT_COLOR)
+                                                       self.PROMPT_COLOR)
         counter_w = icon.get_width() + 6 + count.get_width()
         w = max(counter_w, hint.get_width())
         h = icon.get_height() + self.LINE_GAP + hint.get_height()
@@ -2473,7 +2297,7 @@ class VersusDeathTrans(GameScreen):
         self.life += 1
 
         surface.blit(self.frozen, (0, 0))
-        self.gray.set_alpha(int(self._gray_intp.get() * 255))
+        self.gray.set_alpha(int(170 * self._gray_intp.get()))
         surface.blit(self.gray, (0, 0))
 
         # the ghost floats up and out while fading away
