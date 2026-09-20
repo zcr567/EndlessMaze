@@ -1,12 +1,14 @@
 import os
+import time
 from enum import IntEnum
 
 import pygame as pg
+import pygame.font
 
 from Resources import *
 from effects import *
 # noinspection PyPep8Naming
-from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, BlackScreenTrans
+from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, BlackScreenTrans, make_font
 # (two-player mode) the ghost transition of the versus mode and its random role assignment
 from widgets import RecordsScreen, VersusDeathTrans, VersusResult, assign_versus_roles
 # (history) the results of the games played so far, kept in records.json next to the game
@@ -178,14 +180,15 @@ class Game:
     def run(self):
         # main loop
         while True:
-            self.clock.tick(60)
+            # self.clock.tick(60)
+            t = time.time()
             events = pg.event.get()
 
             # window managing
             for event in events:
                 if event.type == pg.QUIT:
                     pg.quit()
-                    raise SystemExit
+                    exit(0)
                 if event.type == pg.WINDOWSIZECHANGED:
                     self.current_screen.resize(pg.display.get_window_size())
                 if event.type == pg.USEREVENT + 2:  # game ends
@@ -242,6 +245,10 @@ class Game:
                 self.maze_game.hud.draw(self.screen)
             elif self.state == GameState.PAUSED:
                 self.maze_game.pause_screen.draw(self.screen)
+            try:
+                self.screen.blit(make_font(25).render(f"{1 / (time.time() - t):.0f} fps", True, "gray"), (20, 20))
+            except ZeroDivisionError:
+                self.screen.blit(make_font(25).render(f"inf fps", True, "gray"), (20, 20))
             pg.display.flip()
 
 

@@ -1,4 +1,4 @@
-r"""
+"""
 (history) the results of the games played so far.
 
 Every finished solo maze and every settled versus match is put on top of this list, and the list is
@@ -15,7 +15,7 @@ is read as it is, and the next save writes it back in the checked format.
 Packaging (PyInstaller): the file is written next to the executable, not next to this module. That
 matters because a one-file build unpacks the code into a temporary folder that PyInstaller deletes
 on exit: a history written beside the module would be gone after every session. If the executable
-sits in a folder that cannot be written (for instance "C:\Program Files"), the history moves to
+sits in a folder that cannot be written (for instance "C:/Program Files"), the history moves to
 the user's home directory instead, and is read back from there next time.
 
     python -m unittest Tests.test_records -v
