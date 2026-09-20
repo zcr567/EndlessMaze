@@ -1581,7 +1581,7 @@ class GameGameTrans(GameScreen):
                 self._draw_stats(surface)  # stats fading out via the Fade effect
                 if self.next_game.gamemode == GameMode.DOUBLE:
                     self.predator.directly_draw(surface,
-                                                p + self.direction * (self.chase_intp.get() * self.line_length), p_size)
+                                                p - self.direction * (self.chase_intp.get() * self.line_length), p_size)
                     self.prey.directly_draw(surface,
                                             p + self.direction * (self.escape_intp.get() * self.line_length * 2),
                                             p_size)
@@ -1927,7 +1927,7 @@ class RecordsScreen(GameScreen):
         self.size = pg.display.get_window_size()
         self.life = 0
         self.pos = (0, 0)
-        self.clear_btn = Button("CLEAR", style="solid", callback=self.clear)
+        self.clear_btn = Button("CLEAR RECORDS", style="solid", callback=self.clear)
         self._bg = None
         self._panel = None
         self.resize(self.size)
@@ -2152,24 +2152,25 @@ def versus_pair(players):
     return predator, prey
 
 
-def pick_prey_spawn(maze, avoid, rng=random):
+def pick_prey_spawn(maze, avoid):
     """(two-player mode) pick the prey's spawning cell: random, but never on the predator's cell
     nor on the exit, and far enough from the predator to leave it a chance to run."""
-    blocked = (tuple(avoid), tuple(maze.end))
-    min_dist = max(1, int(VERSUS_SPAWN_DIST_RATIO * (maze.width + maze.height)))
-    candidates, fallback = [], []
-    for y in range(maze.height):
-        for x in range(maze.width):
-            if (x, y) in blocked:
-                continue
-            fallback.append(V(x, y))
-            if abs(x - avoid[0]) + abs(y - avoid[1]) >= min_dist:
-                candidates.append(V(x, y))
-    if candidates:
-        return rng.choice(candidates)
-    if fallback:
-        return rng.choice(fallback)
-    return V(avoid)
+    # blocked = (tuple(avoid), tuple(maze.end))
+    # min_dist = max(1, int(VERSUS_SPAWN_DIST_RATIO * (maze.width + maze.height)))
+    # candidates, fallback = [], []
+    # for y in range(maze.height):
+    #     for x in range(maze.width):
+    #         if (x, y) in blocked:
+    #             continue
+    #         fallback.append(V(x, y))
+    #         if abs(x - avoid[0]) + abs(y - avoid[1]) >= min_dist:
+    #             candidates.append(V(x, y))
+    # if candidates:
+    #     return random.choice(candidates)
+    # if fallback:
+    #     return random.choice(fallback)
+    # return V(avoid)
+    return random.choice(maze.get_right_path()[2:-2])
 
 
 def cell_to_surf(game, cell):
