@@ -3,16 +3,15 @@ import time
 from enum import IntEnum
 
 import pygame as pg
-import pygame.font
 
 from Resources import *
 from effects import *
-# noinspection PyPep8Naming
-from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, BlackScreenTrans, make_font
-# (two-player mode) the ghost transition of the versus mode and its random role assignment
-from widgets import RecordsScreen, VersusDeathTrans, VersusResult, assign_versus_roles
 # (history) the results of the games played so far, kept in records.json next to the game
 from records import Records
+# (two-player mode) the ghost transition of the versus mode and its random role assignment
+from widgets import RecordsScreen, VersusDeathTrans, VersusResult, assign_versus_roles
+# noinspection PyPep8Naming
+from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, BlackScreenTrans, make_font
 
 # executable generating command
 # pyinstaller -F --add-data "Resources;Resources" -w -i project_icon.ico main.py
@@ -54,17 +53,17 @@ class Game:
         self.sound_on = True
 
         # game screens
-        self.welcome = WelcomeScreen(self.window_size,
-                                     sound_switch_cb=self.toggle_sound,
-                                     size_set_cb=self.set_maze_size,
-                                     single_player_cb=self.start_single_player,
-                                     double_player_cb=self.start_double_player,
-                                     diff_set_cb=self.set_difficulty,
-                                     vision_set_cb=self.set_vision,
-                                     open_rec_cb=self.open_records)
+        self.welcome = WelcomeScreen(
+            self.window_size,
+            sound_switch_cb=self.toggle_sound,
+            size_set_cb=self.set_maze_size,
+            single_player_cb=self.start_single_player,
+            double_player_cb=self.start_double_player,
+            diff_set_cb=self.set_difficulty,
+            vision_set_cb=self.set_vision,
+            open_rec_cb=self.open_records)
 
         self.records = Records()
-        self.records_screen = RecordsScreen(self.records, back_cb=self.close_records)
 
         self.maze_game: MazeGame | None = None  # will be initialized when start button hit
         self.current_screen = self.welcome
@@ -79,8 +78,9 @@ class Game:
     def open_records(self):
         """show the records of the games played so far"""
         print("called open_records()")
-        self.records_screen.resize(pg.display.get_window_size())
-        self.current_screen = self.records_screen
+        s = RecordsScreen(self.records, back_cb=self.close_records)
+        s.resize(pg.display.get_window_size())
+        self.current_screen = s
         self.state = GameState.MENU
 
     def close_records(self):
@@ -113,28 +113,30 @@ class Game:
     def start_single_player(self):
         print("called start_single_player()")
         self.reset_players()
-        self.current_screen = BlackScreenTrans(self.welcome, gamemode=GameMode.SINGLE,
-                                               size_preset=self.maze_size_preset,
-                                               difficulty=self.maze_diff_preset,
-                                               players=[self.p1],
-                                               pause_cb=self.pause_game,
-                                               sound_switch_cb=self.toggle_sound,
-                                               resume_cb=self.resume_game,
-                                               menu_cb=self.quit_to_menu)
+        self.current_screen = BlackScreenTrans(
+            self.welcome, gamemode=GameMode.SINGLE,
+            size_preset=self.maze_size_preset,
+            difficulty=self.maze_diff_preset,
+            players=[self.p1],
+            pause_cb=self.pause_game,
+            sound_switch_cb=self.toggle_sound,
+            resume_cb=self.resume_game,
+            menu_cb=self.quit_to_menu)
 
     # noinspection PyMethodMayBeStatic
     def start_double_player(self):
         print("called start_double_player()")
         self.reset_players()
         assign_versus_roles(self.p1, self.p2)
-        self.current_screen = BlackScreenTrans(self.welcome, gamemode=GameMode.DOUBLE,
-                                               size_preset=self.maze_size_preset,
-                                               difficulty=self.maze_diff_preset,
-                                               players=[self.p1, self.p2],
-                                               pause_cb=self.pause_game,
-                                               sound_switch_cb=self.toggle_sound,
-                                               resume_cb=self.resume_game,
-                                               menu_cb=self.quit_to_menu)
+        self.current_screen = BlackScreenTrans(
+            self.welcome, gamemode=GameMode.DOUBLE,
+            size_preset=self.maze_size_preset,
+            difficulty=self.maze_diff_preset,
+            players=[self.p1, self.p2],
+            pause_cb=self.pause_game,
+            sound_switch_cb=self.toggle_sound,
+            resume_cb=self.resume_game,
+            menu_cb=self.quit_to_menu)
 
     def set_difficulty(self, preset: str):
         print(f"called set_difficulty({preset})")

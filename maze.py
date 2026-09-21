@@ -112,8 +112,6 @@ class Maze:
         self.set_p(self._start, 5)
         self.generate()
 
-        # print(f"{start_edge} {self.start_edge} {self.end_edge}")
-
     # do NOT change the order of the two lists below
     REPR_CORNER_ENUM = ['┼', '┤', '┬', '┐', '├', '│', '┌', ' ', '┴', '┘', '─', ' ', '└', ' ', ' ', ' ']
 

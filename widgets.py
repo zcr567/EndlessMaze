@@ -4,7 +4,6 @@ A simple widget module for pygame first version written by zyw and refactored by
 
 import math
 import random
-import time
 from enum import IntEnum, IntFlag
 
 import pygame as pg
@@ -1314,7 +1313,7 @@ def _l_sim_rect(start, vec, width):
 
 
 class GameGameTrans(GameScreen):
-    PHASE_TIMES = (40, 40, 40)  # index 0 for phase 0, 1 for phase 3, 2 for phase 2
+    PHASE_TIMES = (60, 60, 60)  # index 0 for phase 0, 1 for phase 3, 2 for phase 2
     STATS_COLOR = (255, 255, 255)
     STATS_LINE_GAP = 12  # vertical gap between the three stat lines
     STATS_ENTER_DURATION = 20  # frames for the fly-in entrance animation
@@ -1434,11 +1433,22 @@ class GameGameTrans(GameScreen):
         self.surface0 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
         self.surface1 = self.maze1.maze_surf.copy()
         self.surface2 = self.maze2.maze_surf.copy()
-
-        if self._ani_p < 2:
-            self._ani_p = 2
-            self.life = 0
-            self._migrate_players()
+        self._calc_path_endpoints()
+        self.color_anim = ChangeColor(
+            self.surface0,
+            start_color=self._start_color,
+            end_color=self._end_color,
+            duration=self.PHASE_TIMES[2],
+            interpolation=Linear
+        )
+        self.line_width = self.maze1.maze_edge_width
+        self.line_width0 = self.line_width
+        self.line_width2 = self.maze2.maze_edge_width
+        self.p_size0 = self.maze1.cell_width * 1.2
+        self.p_size1 = self.maze2.cell_width * 1.2
+        self.max_offset = max(*pg.display.get_window_size())
+        self.line_length = sum(pg.display.get_window_size())
+        self._build_stats()
 
     def _migrate_players(self):
         try:
@@ -1586,7 +1596,7 @@ class GameGameTrans(GameScreen):
             else:
                 self.surface0.fill(self._start_color)
                 self._draw_path_1()
-                self.prey.directly_draw(self.surface0, self.p0[0])
+                self.prey.directly_draw(self.surface0, self.p0[0], (self.p_size0, ) * 2)
                 self._draw_stats(self.surface0)
             surface.blit(self.surface0, (0, 0))
 
@@ -1774,10 +1784,6 @@ class BlackScreenTrans(GameScreen):
     def get_new_screen(self):
         return self.new_sc
 
-
-# ---------------------------------------------------------------------------
-# (limited vision) the sight mode the menu switches on, and (single player) the solo HUD
-# ---------------------------------------------------------------------------
 
 VISION_PRESETS = ["full", "limited"]  # the options of the VISION row of the menu
 
@@ -2026,7 +2032,7 @@ class RecordsScreen(GameScreen):
                 break
         return events
 
-    def draw(self, surface: pg.Surface) -> None:
+    def draw(self, surface: pg.Surface):
         self.life += 1
         surface.blit(self._bg, (0, 0))
         self._panel.set_alpha(min(255, int(self.life / self.INPUT_LOCK * 255)))

@@ -1,6 +1,6 @@
 # Endless Maze
 
-![version](https://img.shields.io/badge/version-0.1-blue)
+![newest_version](https://img.shields.io/badge/newest_version-0.2-blue)
 
 A maze game features real-time randomized maze generating using an original algorithm; single mode & two-player
 chasing mode (still developing); a pretty game UI and game data storage. Made by two students from Beijing Institute of Technology.
@@ -22,6 +22,5 @@ Each base class has a comprehensive document for the developers who want to modi
 
 ## What's the limitations
 
-Now the effect class is not optimized, it uses the pygame functions to munk in-place modification, this causes about 2
-times more blits. The next step we are going to optimize this class using Pygame.SurfArray and Numpy.
+Now some of the transitions are not fine, we will fix them in the next commits.
 
