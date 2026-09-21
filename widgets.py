@@ -4,6 +4,7 @@ A simple widget module for pygame first version written by zyw and refactored by
 
 import math
 import random
+import time
 from enum import IntEnum, IntFlag
 
 import pygame as pg
@@ -108,7 +109,6 @@ class Button(ButtonBase):
         # order: disabled, unpressed, hovered, pressed
         self.caches = []
         radius = self.rect.height // 2
-        content_color = None
         if self.style == "solid":
             colors = [palette[4], main_color, palette[5], palette[3]]
             content_color = palette[-1]
@@ -1286,6 +1286,33 @@ class MazeGame(GameScreen):
         self.draw_timer(surface)
 
 
+def _l_sim_rect(start, vec, width):
+    """return a pygame.Rect object using a set of parameters like drawing a line (the line must be horizontal
+    or vertical)
+    :param start: start point of the line
+    :param vec: the vector of the line, holding direction and length information
+    :param width: line width"""
+    if vec[0] == 0:  # vertical
+        w = width
+        h = abs(vec[1])
+        x0 = start[0] - width / 2
+        if vec[1] >= 0:
+            y0 = start[1]
+        else:
+            y0 = start[1] + vec[1]
+    elif vec[1] == 0:  # horizontal
+        h = width
+        w = abs(vec[0])
+        y0 = start[1] - width / 2
+        if vec[0] >= 0:
+            x0 = start[0]
+        else:
+            x0 = start[0] + vec[0]
+    else:
+        raise ValueError("parameter 'vec' cannot be both non-zero")
+    return pg.Rect(x0, y0, w, h)
+
+
 class GameGameTrans(GameScreen):
     PHASE_TIMES = (40, 40, 40)  # index 0 for phase 0, 1 for phase 3, 2 for phase 2
     STATS_COLOR = (255, 255, 255)
@@ -1300,28 +1327,29 @@ class GameGameTrans(GameScreen):
 
         # players
         self.maze1 = old_game
-        self.players: list[Player] = old_game.players
         if old_game.gamemode == GameMode.SINGLE:
-            self.prey = self.players[0]
+            self.prey = old_game.players[0]
             self.predator = None
         else:
-            self.predator, self.prey = versus_pair(self.players)
+            self.predator, self.prey = versus_pair(old_game.players)
 
         self.end_edge = self.maze1.end_edge
 
         # player heading
         if self.end_edge == 2:
             self.prey.heading = Cell.GO_DOWN
-            self.start_edge = 0
+            start_edge = 0
         elif self.end_edge == 0:
             self.prey.heading = Cell.GO_UP
-            self.start_edge = 2
+            start_edge = 2
         elif self.end_edge == 1:
             self.prey.heading = Cell.GO_RIGHT
-            self.start_edge = 3
+            start_edge = 3
         elif self.end_edge == 3:
             self.prey.heading = Cell.GO_LEFT
-            self.start_edge = 1
+            start_edge = 1
+        else:
+            raise ValueError(f"old maze has wrong end edge {self.end_edge}")
 
         if self.predator:
             self.predator.heading = self.prey.heading
@@ -1330,7 +1358,7 @@ class GameGameTrans(GameScreen):
                                                size_preset=self.maze1.size_preset,
                                                difficulty=self.maze1.difficulty,
                                                players=self.maze1.players,
-                                               start_edge=self.start_edge,
+                                               start_edge=start_edge,
                                                pause_cb=self.maze1.pause_cb,
                                                sound_switch_cb=self.maze1.sound_switch_cb,
                                                resume_cb=self.maze1.resume_cb,
@@ -1341,7 +1369,9 @@ class GameGameTrans(GameScreen):
         self.surface1 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
         self.surface2 = pg.Surface(pg.display.get_window_size(), pg.SRCALPHA)
         old_game.draw(self.surface1, plot_only=True)
-        self.path_surf = self.surface0.copy().convert(self.surface0)
+
+        # self.path_surf = self.surface0.copy().convert(self.surface0)
+        self.trans_path_surf = []
 
         # animation related
         self.surface0.fill(self.maze1.bg_color)
@@ -1352,10 +1382,11 @@ class GameGameTrans(GameScreen):
         self._start_color = self.maze1.bg_color
         self._end_color = self.maze2.bg_color
 
+        # p0 for player position, p1 for old maze exit points, p2 for new maze entrance points
         self.p0 = []
         self.p1 = []
         self.p2 = []
-        self._calc_points()
+        self._calc_path_endpoints()
 
         self.color_anim = ChangeColor(
             self.surface0,
@@ -1407,10 +1438,17 @@ class GameGameTrans(GameScreen):
         if self._ani_p < 2:
             self._ani_p = 2
             self.life = 0
-            for p in self.players:
-                p.game = self.maze2
+            self._migrate_players()
 
-    def _calc_points(self):
+    def _migrate_players(self):
+        try:
+            self.prey.game = self.maze2
+            self.predator.game = self.maze2
+        except AttributeError:
+            pass
+
+    def _calc_path_endpoints(self):
+        self.p0, self.p1, self.p2 = [], [], []
         for maze, end in ((self.maze1, self.maze1.maze.end), (self.maze2, self.maze2.maze.start)):
             if end[0] == maze.maze.width - 1:
                 p1 = end[0] + 1, end[1]
@@ -1433,28 +1471,20 @@ class GameGameTrans(GameScreen):
             self.p2.append(V(int(maze.region[0] + maze.cell_width * p2[0]),
                              int(maze.region[1] + maze.cell_width * p2[1])))
 
-    def _draw_path_0(self):
-        self.path_surf.fill((0, 0, 0, 0), special_flags=pg.BLEND_RGBA_MULT)
-        pg.draw.line(
-            self.path_surf,
-            MazeGame.MAZE_EDGE_COLOR,
-            self.p1[0] + self.offset,
-            self.p1[0] + self.offset + self.direction * self.line_length * self.intp0.get(),
-            self.line_width
-        )
-        pg.draw.line(
-            self.path_surf,
-            MazeGame.MAZE_EDGE_COLOR,
-            self.p2[0] + self.offset,
-            self.p2[0] + self.offset + self.direction * self.line_length * self.intp0.get(),
-            self.line_width
-        )
-        w = self.maze1.maze_edge_width // 2
-        Shadow(self.path_surf, (w, w))
+    def _paths(self, p1, p2, vec, width):
+        # why to use a tmp surface: the surface0 should be opaque, and fill a transparent color will directly
+        # replace the original color, making the last frame shown through the "hole" made by fill()
+        offset = (self.line_width // 2,) * 2
+        rect = _l_sim_rect((0, 0), vec, width)
+        t_surf = pg.Surface((rect.size[0] + offset[0], rect.size[1] + offset[1]), pg.SRCALPHA)
+        t_surf.fill((0, 0, 0, 128), pg.Rect(*offset, *rect.size))
+        t_surf.fill(MazeGame.MAZE_EDGE_COLOR, pg.Rect(0, 0, *rect.size))
+        for p in (p1, p2):
+            self.surface0.blit(t_surf, _l_sim_rect(p + self.offset, vec, width).topleft)
+
+    # these two methods don't use the Shadow effect in the widgets.py for performance consideration
 
     def _draw_path_1(self):
-        self.path_surf = pg.Surface(self.surface0.get_size(), pg.SRCALPHA).convert_alpha(self.surface0)
-        # noinspection DuplicatedCode
         p1 = self.p1[0] + (self.p1[1] - self.p1[0]) * self.intp1.get()
         p2 = self.p2[0] + (self.p2[1] - self.p2[0]) * self.intp1.get()
         w, h = pg.display.get_window_size()
@@ -1472,32 +1502,7 @@ class GameGameTrans(GameScreen):
             p2 = V(0, p2[1])
         else:
             raise ValueError("end_edge must be 0, 1, 2, or 3")
-
-        pg.draw.line(self.path_surf, MazeGame.MAZE_EDGE_COLOR, p1, p1 - self.direction * self.line_length,
-                     self.line_width)
-        pg.draw.line(self.path_surf, MazeGame.MAZE_EDGE_COLOR, p2, p2 - self.direction * self.line_length,
-                     self.line_width)
-        w = self.line_width // 2
-        Shadow(self.path_surf, (w, w))
-
-    def _draw_path_2(self):
-        self.path_surf.fill((0, 0, 0, 0), special_flags=pg.BLEND_RGBA_MULT)
-        pg.draw.line(
-            self.path_surf,
-            MazeGame.MAZE_EDGE_COLOR,
-            self.p1[1] + self.offset,
-            self.p1[1] + self.offset - self.direction * self.line_length * self.intp2.get(),
-            self.line_width
-        )
-        pg.draw.line(
-            self.path_surf,
-            MazeGame.MAZE_EDGE_COLOR,
-            self.p2[1] + self.offset,
-            self.p2[1] + self.offset - self.direction * self.line_length * self.intp2.get(),
-            self.line_width
-        )
-        w = self.maze2.maze_edge_width // 2
-        Shadow(self.path_surf, (w, w))
+        self._paths(p1, p2, self.direction * self.line_length, self.line_width)
 
     def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
         if self._ani_p == 0 and self.life == self.PHASE_TIMES[0]:  # enter phase 1
@@ -1528,8 +1533,7 @@ class GameGameTrans(GameScreen):
             if self.pre_p3 and self.life == self.PHASE_TIMES[2]:  # enter phase 2
                 self.life = 0
                 self._ani_p += 1
-                for p in self.players:
-                    p.game = self.maze2
+                self._migrate_players()
                 self.next_game.draw(self.surface2, plot_only=True)
                 self.p2_fade = RoundMaskFade(self.surface2, self.PHASE_TIMES[1] // 2, self.p0[1], Quad)
                 self.p2_fade.animate_now()
@@ -1540,56 +1544,58 @@ class GameGameTrans(GameScreen):
         return events
 
     def draw(self, surface: pg.Surface) -> None:
-
         # phase 0: old game fades, player goes into a straight path
         if self._ani_p == 0:
             self.surface0.fill(self._start_color)
-            self._draw_path_0()
-            self.surface0.blit(self.path_surf, (0, 0))
             self.surface0.blit(self.surface1, self.offset)
-            self.prey.directly_draw(self.surface0, self.p0[0], (self.p_size0,) * 2)
             if self.life >= self.PHASE_TIMES[0] // 4:
+                self._paths(self.p1[0], self.p2[0],
+                            self.direction * (self.intp0.get() * self.line_length),
+                            self.line_width)
                 self.intp0.update()
                 self.offset = V(int(-self.intp0.get() * self.max_offset * self.direction[0]),
                                 int(-self.intp0.get() * self.max_offset * self.direction[1]))
+            self.prey.directly_draw(self.surface0, self.p0[0], (self.p_size0,) * 2)
             surface.blit(self.surface0, (0, 0))
 
         # phase 1: the path becomes longer and throughout the screen, the score shown and game paused
         #          if oud game is a double-player game and prey escapes,
         #          prey goes out of the screen and predator shown in this phase
         elif self._ani_p == 1:
-            surface.blit(self.surface0, (0, 0))
             if self.pre_p3:
+                if not self.color_anim.animating:
+                    self.surface0.fill(self._end_color)
                 self.line_width = int(self.line_width0 + (self.line_width2 - self.line_width0) * self.intp1.get())
                 p_size = int(self.p_size0 + (self.p_size1 - self.p_size0) * self.intp1.get())
                 p_size = (p_size, p_size)
                 p = self.p0[0] + (self.p0[1] - self.p0[0]) * self.intp1.get()
                 self._draw_path_1()
-                surface.blit(self.path_surf, (0, 0))
-                self._draw_stats(surface)  # stats fading out via the Fade effect
+                self._draw_stats(self.surface0)  # stats fading out via the Fade effect
                 if self.next_game.gamemode == GameMode.DOUBLE:
-                    self.predator.directly_draw(surface,
+                    self.predator.directly_draw(self.surface0,
                                                 p - self.direction * (self.chase_intp.get() * self.line_length), p_size)
-                    self.prey.directly_draw(surface,
+                    self.prey.directly_draw(self.surface0,
                                             p + self.direction * (self.escape_intp.get() * self.line_length * 2),
                                             p_size)
                 else:
-                    self.prey.directly_draw(surface, p, p_size)
+                    self.prey.directly_draw(self.surface0, p, p_size)
                 self.intp1.update()
                 self.escape_intp.update()
                 if self.life >= self.PHASE_TIMES[2] // 2:
                     self.chase_intp.update()
             else:
-                surface.blit(self.surface0, (0, 0))
-                surface.blit(self.path_surf, (0, 0))
-                self.prey.directly_draw(surface, self.p0[0])
-                self._draw_stats(surface)
+                self.surface0.fill(self._start_color)
+                self._draw_path_1()
+                self.prey.directly_draw(self.surface0, self.p0[0])
+                self._draw_stats(self.surface0)
+            surface.blit(self.surface0, (0, 0))
 
         # phase 2: straight path disappears and new game shown
         elif self._ani_p == 2:
             self.surface0.fill(self._end_color)
-            self._draw_path_2()
-            self.surface0.blit(self.path_surf, (0, 0))
+            self._paths(self.p1[1], self.p2[1],
+                        -self.direction * (self.intp2.get() * self.line_length),
+                        self.line_width)
             if self.life == self.PHASE_TIMES[1] // 3:
                 self.p2_fade.animate_now()
             if self.life > self.PHASE_TIMES[1] // 3:
@@ -1747,6 +1753,7 @@ class BlackScreenTrans(GameScreen):
                 event = pg.event.Event(pg.USEREVENT + 4)
                 pg.event.post(event)
             else:
+                print(type(self.old_screen).__name__)
                 event = pg.event.Event(pg.USEREVENT + 5)
                 pg.event.post(event)
         return events
@@ -2086,11 +2093,6 @@ class VersusResult(GameScreen):
         self._build()
 
     def handle_events(self, events: list[pg.event.Event]) -> list[pg.event.Event]:
-        if self.life >= self.INPUT_LOCK:
-            for event in events:
-                if event.type in (pg.KEYDOWN, pg.MOUSEBUTTONDOWN):
-                    pg.event.post(pg.event.Event(pg.USEREVENT + 5))  # and on to the menu
-                    break
         return events
 
     def draw(self, surface: pg.Surface) -> None:

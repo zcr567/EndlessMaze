@@ -179,11 +179,12 @@ class Game:
             self.state = GameState.MENU
         else:
             self.current_screen = BlackScreenTrans(self.maze_game, _manu=self.welcome)
+            self.state = GameState.MENU
 
     def run(self):
         # main loop
         while True:
-            # self.clock.tick(60)
+            self.clock.tick(60)
             t = time.time()
             events = pg.event.get()
 
@@ -217,7 +218,8 @@ class Game:
                     self.state = GameState.PLAYING if isinstance(self.maze_game, MazeGame) else GameState.MENU
                     self.next_game = None
                 if event.type == pg.USEREVENT + 5:  # from other to menu
-                    self.quit_to_menu()
+                    self.current_screen = self.welcome
+                    self.state = GameState.MENU
                 if event.type == pg.USEREVENT + 6:
                     if type(self.current_screen) is MazeGame:
                         self.current_screen.resume_timing()
