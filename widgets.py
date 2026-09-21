@@ -1129,6 +1129,7 @@ class MazeGame(GameScreen):
                             * self.maze.p_len
                             / self.timer.get())
                 self.players[0].score += score
+                self.timer.pause()
                 game_end = pg.event.Event(pg.USEREVENT + 2,
                                           {'gamemode': self.gamemode,
                                            'size': (self.field_width, self.field_height),
@@ -1145,6 +1146,7 @@ class MazeGame(GameScreen):
             elif prey.pos == self.maze.end:
                 self._versus_over = True
                 prey.score += self.versus_score()  # the escape pays the prey only
+                self.timer.pause()
                 game_end = pg.event.Event(pg.USEREVENT + 2,  # the prey escapes: the regular transition
                                           {'gamemode': self.gamemode,
                                            'size': (self.field_width, self.field_height),
@@ -1349,7 +1351,6 @@ class GameGameTrans(GameScreen):
             start_edge = 1
         else:
             raise ValueError(f"old maze has wrong end edge {self.end_edge}")
-
         if self.predator:
             self.predator.heading = self.prey.heading
 
@@ -1763,7 +1764,6 @@ class BlackScreenTrans(GameScreen):
                 event = pg.event.Event(pg.USEREVENT + 4)
                 pg.event.post(event)
             else:
-                print(type(self.old_screen).__name__)
                 event = pg.event.Event(pg.USEREVENT + 5)
                 pg.event.post(event)
         return events
