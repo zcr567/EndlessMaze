@@ -5,7 +5,6 @@ A simple widget module for pygame first version written by zyw and refactored by
 import math
 import random
 from enum import IntEnum, IntFlag
-from functools import lru_cache
 
 import pygame as pg
 

@@ -226,22 +226,20 @@ class Shadow(Effect):
         super().__init__(surface, *args, **kwargs)
         self._offset = offset
         self._color = color
-        self._prev_surf = self._surface.copy()
         self._shadow_cache = self._generate_shadow()
         self.update(forced=True)
 
     def _generate_shadow(self) -> pygame.Surface:
         """generate a semi transparent shadow surface."""
-        shadow_surf = pygame.mask.from_surface(self._surface, 127)
-        shadow_surf = shadow_surf.to_surface(setcolor=self._color,
-                                             unsetcolor=(0, 0, 0, 0)).convert_alpha(self._prev_surf)
+        shadow_surf = self._surface.copy()
+        shadow_surf.fill((0, 0, 0, self._color[3]), special_flags=pygame.BLEND_RGBA_MULT)
+        if self._color[:3] != (0, 0, 0):
+            shadow_surf.fill((*self._color[:3], 0), special_flags=pygame.BLEND_RGBA_ADD)
         return shadow_surf
 
     def update(self, forced=False):
         """blit the shadow surface. Call the function multiple times will darken the shadow"""
         if forced:
-            self._prev_surf = self._surface.copy()
-            self._generate_shadow()
             ts = self._surface.copy()
             self._surface.fill((0, 0, 0, 0), special_flags=pygame.BLEND_RGBA_MULT)
             self._surface.blit(self._shadow_cache, self._offset)
@@ -259,14 +257,20 @@ class Fade(Effect):
         if self._cur_interpolation is None:
             return
         self._surface.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_SUB)
+        self._original.set_alpha(round(self._cur_interpolation.get() * 255))
         self._surface.blit(self._original, (0, 0))
-
-        self._surface.fill((255, 255, 255, round(self._cur_interpolation.get() * 255)),
-                           special_flags=pygame.BLEND_RGBA_MULT)
 
 
 class RoundMaskFade(Effect):
-    def __init__(self, surface, duration=30, center=None, interpolation=Linear, invert=False):
+    def __init__(self, surface, duration=30, center=None, interpolation=Linear, invert=False, has_alpha=False):
+        """Fade effect on a surface.
+        :param surface: surface to fade
+        :param duration: duration of the fade
+        :param center: center of the fade
+        :param interpolation: interpolation function
+        :param invert: invert the round mask, if set to be True, the effect looks like a hole on the surface
+        :param has_alpha: should be True if the parameter "surface" is semi-transparent, or the alpha will be discarded
+               (if it is true, the effect will be slower)"""
         super().__init__(surface, duration=duration, interpolation=interpolation)
         w, h = surface.get_size()
         if center is None:
@@ -279,6 +283,7 @@ class RoundMaskFade(Effect):
         self._original = self._surface.copy()
         self._mask_surf = pygame.Surface(self._original.get_size(), pygame.SRCALPHA)
         self.invert = invert
+        self.has_alpha = has_alpha
 
     @property
     def radius(self):
@@ -290,17 +295,15 @@ class RoundMaskFade(Effect):
         if self._cur_interpolation is None:
             return
 
+        radius = self._cur_interpolation.get() * self._max_r
         if self.invert:
-            self._mask_surf.fill((0, 0, 0, 0))
-            pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center,
-                               self._cur_interpolation.get() * self._max_r, )
-            m = pygame.mask.from_surface(self._mask_surf, 127)
-            self._mask_surf = m.to_surface(setcolor=(0, 0, 0, 0), unsetcolor=(255, 255, 255, 255))
+            self._mask_surf.fill((255, 255, 255, 255))
+            pygame.draw.circle(self._mask_surf, (0, 0, 0, 0), self.center, radius)
         else:
             self._mask_surf.fill((0, 0, 0, 0))
-            pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center,
-                               self._cur_interpolation.get() * self._max_r)
-        self._surface.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_SUB)
+            pygame.draw.circle(self._mask_surf, (255, 255, 255, 255), self.center, radius)
+        if self.has_alpha:
+            self._surface.fill((0, 0, 0, 255), special_flags=pygame.BLEND_RGBA_SUB)
         self._surface.blit(self._original, (0, 0))
         self._surface.blit(self._mask_surf, (0, 0), special_flags=pygame.BLEND_RGBA_MULT)
 

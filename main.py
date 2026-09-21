@@ -174,6 +174,9 @@ class Game:
                 and not getattr(self.maze_game, "versus_settled", False)):
             self.current_screen = VersusResult(self.maze_game, self.welcome)
             self.records.add_versus(self.maze_game, self.current_screen.winner_text())
+        elif isinstance(self.current_screen, VersusResult):
+            self.current_screen = self.welcome
+            self.state = GameState.MENU
         else:
             self.current_screen = BlackScreenTrans(self.maze_game, _manu=self.welcome)
 
@@ -214,8 +217,7 @@ class Game:
                     self.state = GameState.PLAYING if isinstance(self.maze_game, MazeGame) else GameState.MENU
                     self.next_game = None
                 if event.type == pg.USEREVENT + 5:  # from other to menu
-                    self.current_screen = self.welcome
-                    self.state = GameState.MENU
+                    self.quit_to_menu()
                 if event.type == pg.USEREVENT + 6:
                     if type(self.current_screen) is MazeGame:
                         self.current_screen.resume_timing()
