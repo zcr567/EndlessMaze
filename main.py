@@ -1,5 +1,6 @@
 import os
 import time
+import sys
 from enum import IntEnum
 
 import pygame as pg
@@ -194,7 +195,7 @@ class Game:
             for event in events:
                 if event.type == pg.QUIT:
                     pg.quit()
-                    exit(0)
+                    sys.exit(0)
                 if event.type == pg.WINDOWSIZECHANGED:
                     self.current_screen.resize(pg.display.get_window_size())
                 if event.type == pg.USEREVENT + 2:  # game ends
@@ -251,10 +252,13 @@ class Game:
                 self.maze_game.hud.draw(self.screen)
             elif self.state == GameState.PAUSED:
                 self.maze_game.pause_screen.draw(self.screen)
-            try:
-                self.screen.blit(make_font(25).render(f"{1 / (time.time() - t):.0f} fps", True, "gray"), (20, 20))
-            except ZeroDivisionError:
-                self.screen.blit(make_font(25).render(f"inf fps", True, "gray"), (20, 20))
+
+            # FOR DEBUGGING
+
+            # try:
+            #     self.screen.blit(make_font(25).render(f"{1 / (time.time() - t):.0f} fps", True, "gray"), (20, 20))
+            # except ZeroDivisionError:
+            #     self.screen.blit(make_font(25).render(f"inf fps", True, "gray"), (20, 20))
             pg.display.flip()
 
 

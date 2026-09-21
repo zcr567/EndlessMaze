@@ -102,7 +102,7 @@ class Maze:
         if end is None:
             self._end = self._b_select(end_edge, is_end=True)
             while abs(self._start[0] - self._end[0]) + abs(self._start[1] - self._end[1]) < 2:
-                self._start = self._b_select(end_edge, is_start=True)
+                self._end = self._b_select(end_edge, is_end=True)
         else:
             if self.is_valid_coord(end):
                 self._end = end
@@ -444,7 +444,6 @@ class Maze:
         self._gen_branch()
         self._ls_paths = []  # clean up the space
         self._gen_one_way_doors()
-
 
     # -----------------------------------------------------------------------
     # one-way doors

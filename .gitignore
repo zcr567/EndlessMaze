@@ -7,3 +7,5 @@
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 build/
+/main.spec
+/dist/
