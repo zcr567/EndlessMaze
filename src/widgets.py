@@ -1917,7 +1917,7 @@ class RecordsScreen(GameScreen):
     TEXT_COLOR = (255, 255, 255)
     DIM_COLOR = (208, 224, 218)
     EMPTY_TEXT = "no games yet - go and play one"
-    HINT_TEXT = "press any key to return"
+    HINT_TEXT = "press Backspace to return"
     CLEAR_SIZE = (132, 46)
     FOOTER_GAP = 24  # room between the hint and the clear button of the footer row
     INPUT_LOCK = 15  # frames of ignored keys, so the key that opened this screen cannot close it

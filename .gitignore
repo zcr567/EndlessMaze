@@ -1,4 +1,3 @@
-/原始素材/
 /.idea/
 /.idea/.gitignore
 /.idea/EndlessMaze.iml
@@ -7,6 +6,8 @@
 /.idea/inspectionProfiles/profiles_settings.xml
 /.idea/vcs.xml
 /build/
-/main.spec
 /dist/
-/records.json
+/src/records.json
+/src/build/
+/src/dist/
+/src/EndlessMaze.spec

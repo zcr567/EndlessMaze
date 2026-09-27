@@ -14,9 +14,6 @@ from widgets import RecordsScreen, VersusDeathTrans, VersusResult, assign_versus
 # noinspection PyPep8Naming
 from widgets import WelcomeScreen, GameMode, MazeGame, GameGameTrans, Player, BlackScreenTrans, make_font
 
-# executable generating command
-# pyinstaller -F --add-data "Resources;Resources" -w -i project_icon.ico main.py
-
 pg.init()
 INIT_SCREEN_SIZE = (1200, 800)  # not necessarily this value
 pg.mixer.init()
